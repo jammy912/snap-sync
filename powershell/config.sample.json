@@ -1,0 +1,14 @@
+{
+  "_說明": "複製此檔為 config.json 並填入實際值。config.json 已列入 .gitignore，不會進 git。",
+
+  "Endpoint": "https://script.google.com/macros/s/請填入部署ID/exec",
+
+  "_AdminToken說明": "內部管理端點專用的強 token，與 Apps Script 指令碼屬性的 ADMIN_TOKEN 一致。只放在內部，絕不出現在前端。",
+  "AdminToken": "請填入一組夠長的隨機字串",
+
+  "_Roots說明": "根名稱 → 本機實體路徑。根名稱會成為目錄樹第一層，手機上看到「工程/專案A/區域1」，落地於 D:\\工程專案\\專案A\\區域1。只有一個路徑時也可改用 \"RootDir\": \"D:\\\\工程專案\"（不加前綴）。",
+  "Roots": {
+    "工程": "D:\\工程專案",
+    "驗收": "E:\\驗收照片"
+  }
+}

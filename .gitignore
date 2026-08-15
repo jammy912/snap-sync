@@ -1,0 +1,26 @@
+# build 時由 scripts/build-config.js 產生，不進 git
+public/js/config.js
+
+# 本機端點覆寫（開發用，勿提交）
+.env
+.env.local
+
+# PowerShell 設定：含 ADMIN_TOKEN，絕不可進 git
+powershell/config.json
+
+# Vercel
+.vercel
+
+# 相依套件（本專案零依賴，保險起見仍列）
+node_modules/
+
+# OS / 編輯器
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/
+
+# PowerShell 執行記錄
+powershell/logs/
+*.log

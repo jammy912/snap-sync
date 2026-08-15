@@ -1,0 +1,197 @@
+/* 工地拍照上傳系統 — 樣式
+   由 sample（CAP/index.html 內嵌 style）抽出，並新增登入畫面與目錄樹。 */
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+:root {
+  --bg: #12121c;
+  --panel: #1e1e2e;
+  --panel2: #28283c;
+  --accent: #4f7cff;
+  --danger: #e0405e;
+  --ok: #2ec16e;
+  --warn: #e0a33e;
+  --text: #e8e8f0;
+  --muted: #9a9ab0;
+  --border: #35354a;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  overscroll-behavior: none;
+}
+body { display: flex; flex-direction: column; }
+
+/* ---------- Header ---------- */
+header {
+  padding: 12px 16px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+header h1 { font-size: 17px; font-weight: 600; }
+.status-dot { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot.online { background: var(--ok); }
+.dot.offline { background: var(--danger); }
+
+main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+
+/* ---------- Tabs ---------- */
+nav.tabs { display: flex; background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+nav.tabs button {
+  flex: 1; padding: 12px; background: none; border: none;
+  color: var(--muted); font-size: 15px; font-weight: 500;
+  border-bottom: 2px solid transparent; cursor: pointer;
+}
+nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* ---------- 登入 ---------- */
+#loginView {
+  position: fixed; inset: 0; z-index: 300;
+  background: var(--bg); display: none;
+  flex-direction: column; align-items: center; justify-content: center;
+  padding: 24px;
+}
+#loginView.active { display: flex; }
+.login-box { width: 100%; max-width: 360px; }
+.login-box h2 { font-size: 20px; margin-bottom: 6px; text-align: center; }
+.login-box .sub { font-size: 13px; color: var(--muted); text-align: center; margin-bottom: 24px; }
+.login-err {
+  display: none; background: rgba(224,64,94,.15); border: 1px solid var(--danger);
+  color: #ffb3c0; padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 14px;
+}
+.login-err.show { display: block; }
+
+/* ---------- 表單 ---------- */
+.field { margin-bottom: 18px; }
+.field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.field input {
+  width: 100%; padding: 12px; border-radius: 8px;
+  background: var(--panel2); border: 1px solid var(--border);
+  color: var(--text); font-size: 16px; /* 16px 可避免 iOS 聚焦時自動放大 */
+}
+.hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
+
+.btn {
+  padding: 12px 18px; border-radius: 8px; border: none;
+  font-size: 15px; font-weight: 600; cursor: pointer; flex: 1;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:disabled { opacity: .5; }
+.btn-danger { background: var(--danger); color: #fff; }
+.btn-ghost { background: var(--panel2); color: var(--text); border: 1px solid var(--border); }
+.btn-block { width: 100%; flex: none; }
+
+/* ---------- 拍照 ---------- */
+#cameraView { display: none; flex-direction: column; height: 100%; }
+#cameraView.active { display: flex; }
+
+.target-bar {
+  padding: 10px 14px; background: var(--panel2); border-bottom: 1px solid var(--border);
+  font-size: 13px; display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.target-bar .label { color: var(--muted); flex-shrink: 0; }
+.target-bar .value { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.target-bar .value.unset { color: var(--warn); }
+
+.cam-wrap {
+  position: relative; flex: 1; background: #000;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; min-height: 240px;
+}
+#video { width: 100%; height: 100%; object-fit: cover; }
+#camPlaceholder { color: var(--muted); text-align: center; padding: 40px; font-size: 15px; line-height: 1.7; }
+
+.cam-controls {
+  padding: 16px; display: flex; gap: 12px; align-items: center;
+  justify-content: center; background: var(--panel); flex-shrink: 0;
+}
+.shutter {
+  width: 68px; height: 68px; border-radius: 50%;
+  background: #fff; border: 4px solid var(--accent);
+  cursor: pointer; flex-shrink: 0; transition: transform .1s;
+}
+.shutter:active { transform: scale(0.92); }
+.shutter:disabled { opacity: .4; }
+.icon-btn {
+  width: 48px; height: 48px; border-radius: 50%;
+  background: var(--panel2); border: 1px solid var(--border);
+  color: var(--text); font-size: 20px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+
+/* ---------- 目錄樹 ---------- */
+#treeView { display: none; padding: 12px; }
+#treeView.active { display: block; }
+.tree-node { user-select: none; }
+.tree-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 10px 8px; border-radius: 8px; cursor: pointer;
+  border: 1px solid transparent;
+}
+.tree-row:active { background: var(--panel2); }
+.tree-row.selected { background: rgba(79,124,255,.18); border-color: var(--accent); }
+.tree-toggle {
+  width: 22px; height: 22px; flex-shrink: 0; display: flex;
+  align-items: center; justify-content: center; color: var(--muted); font-size: 12px;
+}
+.tree-toggle.leaf { visibility: hidden; }
+.tree-name { flex: 1; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-children { margin-left: 18px; border-left: 1px solid var(--border); padding-left: 4px; }
+.tree-children.collapsed { display: none; }
+
+/* ---------- 佇列 ---------- */
+#queueView { display: none; padding: 12px; }
+#queueView.active { display: block; }
+.toolbar { padding: 0 0 12px; display: flex; gap: 8px; align-items: center; font-size: 13px; color: var(--muted); }
+.toolbar .spacer { flex: 1; }
+.mini-btn {
+  padding: 7px 12px; border-radius: 7px; background: var(--panel2);
+  border: 1px solid var(--border); color: var(--text); font-size: 13px; cursor: pointer;
+}
+.gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.thumb {
+  position: relative; aspect-ratio: 1; border-radius: 10px;
+  overflow: hidden; background: var(--panel2); cursor: pointer; border: 1px solid var(--border);
+}
+.thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.thumb .meta {
+  position: absolute; bottom: 0; left: 0; right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,.85));
+  padding: 16px 8px 6px; font-size: 11px; color: #ddd; line-height: 1.4;
+}
+.thumb .meta .path { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.up-badge {
+  position: absolute; top: 6px; right: 6px;
+  min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+  font-size: 11px; display: flex; align-items: center; justify-content: center; color: #fff;
+}
+.up-badge.pending { background: var(--muted); }
+.up-badge.sent { background: var(--ok); }
+.up-badge.error { background: var(--danger); }
+.empty { text-align: center; color: var(--muted); padding: 60px 20px; font-size: 15px; line-height: 1.8; }
+
+/* ---------- 設定 ---------- */
+#settingsView { display: none; padding: 16px; }
+#settingsView.active { display: block; }
+.user-card {
+  background: var(--panel2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px; margin-bottom: 18px; font-size: 14px; line-height: 1.8;
+}
+.user-card .k { color: var(--muted); display: inline-block; min-width: 76px; }
+
+/* ---------- Toast ---------- */
+#toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+  background: var(--panel2); color: var(--text); padding: 12px 20px;
+  border-radius: 10px; font-size: 14px; opacity: 0; pointer-events: none;
+  transition: all .25s; z-index: 400; border: 1px solid var(--border);
+  max-width: 90%; text-align: center;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#12121c">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="工地拍照">
+<title>工地拍照上傳</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ================= 登入 ================= -->
+<div id="loginView">
+  <div class="login-box">
+    <h2>工地拍照上傳</h2>
+    <div class="sub">請以現場帳號登入</div>
+    <div class="login-err" id="loginErr"></div>
+    <div class="field">
+      <label for="loginUser">帳號</label>
+      <input type="text" id="loginUser" autocomplete="username" autocapitalize="none" autocorrect="off">
+    </div>
+    <div class="field">
+      <label for="loginPass">密碼</label>
+      <input type="password" id="loginPass" autocomplete="current-password">
+    </div>
+    <button class="btn btn-primary btn-block" id="loginBtn">登入</button>
+    <div class="hint" style="margin-top:16px">
+      登入後憑證會保留在本機，之後開啟 App 不需重新登入。
+    </div>
+  </div>
+</div>
+
+<!-- ================= 主畫面 ================= -->
+<header>
+  <h1>工地拍照上傳</h1>
+  <span class="status-dot"><span class="dot" id="netDot"></span><span id="netText">檢查中</span></span>
+</header>
+
+<nav class="tabs">
+  <button data-tab="camera" class="active">拍照</button>
+  <button data-tab="tree">目錄</button>
+  <button data-tab="queue">佇列 <span id="countBadge"></span></button>
+  <button data-tab="settings">設定</button>
+</nav>
+
+<main>
+  <!-- 拍照 -->
+  <section id="cameraView" class="active">
+    <div class="target-bar">
+      <span class="label">上傳至</span>
+      <span class="value unset" id="targetLabel">尚未選擇目錄</span>
+      <button class="mini-btn" id="pickTargetBtn">選擇</button>
+    </div>
+    <div class="cam-wrap">
+      <video id="video" autoplay playsinline muted style="display:none"></video>
+      <div id="camPlaceholder">
+        點下方按鈕開啟相機<br>
+        <span style="font-size:13px">(需要相機權限)</span>
+      </div>
+    </div>
+    <div class="cam-controls">
+      <button class="icon-btn" id="switchBtn" title="切換鏡頭" style="display:none">🔄</button>
+      <button class="shutter" id="shutterBtn" disabled></button>
+      <button class="icon-btn" id="startCamBtn" title="開啟相機">📷</button>
+    </div>
+  </section>
+
+  <!-- 目錄樹 -->
+  <section id="treeView">
+    <div class="toolbar">
+      <span id="treeInfo">—</span>
+      <span class="spacer"></span>
+      <button class="mini-btn" id="refreshTreeBtn">重新整理</button>
+    </div>
+    <div id="treeRoot"></div>
+    <div class="empty" id="treeEmpty" style="display:none">
+      尚無目錄資料<br>
+      <span style="font-size:13px">請確認內部排程已推送目錄樹，然後按「重新整理」</span>
+    </div>
+  </section>
+
+  <!-- 佇列 -->
+  <section id="queueView">
+    <div class="toolbar">
+      <span id="queueInfo">—</span>
+      <span class="spacer"></span>
+      <button class="mini-btn" id="retryAllBtn">立即重送</button>
+    </div>
+    <div class="gallery-grid" id="grid"></div>
+    <div class="empty" id="queueEmpty" style="display:none">
+      目前沒有待上傳的照片<br><span style="font-size:13px">切到「拍照」開始記錄現場</span>
+    </div>
+  </section>
+
+  <!-- 設定 -->
+  <section id="settingsView">
+    <div class="user-card" id="userCard">
+      <div><span class="k">使用者</span><span id="whoName">—</span></div>
+      <div><span class="k">目錄起點</span><span id="whoRoot">—</span></div>
+    </div>
+
+    <div class="field">
+      <label for="maxEdge">照片最長邊 (px)</label>
+      <input type="number" id="maxEdge" value="1600" min="400" max="4000" step="100">
+      <div class="hint">拍照後會自動縮小，使最長邊不超過此值再上傳。</div>
+    </div>
+    <div class="field">
+      <label for="quality">JPEG 品質 (0.1 ~ 1.0)</label>
+      <input type="number" id="quality" value="0.7" min="0.1" max="1" step="0.05">
+    </div>
+    <div class="field">
+      <label for="endpointOverride">端點網址覆寫（選填）</label>
+      <input type="text" id="endpointOverride" placeholder="留空則使用部署設定的端點">
+      <div class="hint">供切換測試／正式端點使用；留空即採用 Vercel 環境變數設定的網址。</div>
+    </div>
+
+    <button class="btn btn-primary btn-block" id="saveSettingsBtn">儲存設定</button>
+    <button class="btn btn-ghost btn-block" id="installBtn" style="margin-top:10px;display:none">📲 加入主畫面</button>
+    <button class="btn btn-danger btn-block" id="logoutBtn" style="margin-top:10px">登出</button>
+
+    <div class="hint" style="margin-top:20px">
+      照片先存在本機，上傳成功後才會從佇列移除。<br>
+      若尚有未上傳照片，登出前請先確認已全部送出。
+    </div>
+  </section>
+</main>
+
+<canvas id="canvas" style="display:none"></canvas>
+<div id="toast"></div>
+
+<script src="js/config.js"></script>
+<script src="js/util.js"></script>
+<script src="js/api.js"></script>
+<script src="js/db.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/tree.js"></script>
+<script src="js/camera.js"></script>
+<script src="js/queue.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

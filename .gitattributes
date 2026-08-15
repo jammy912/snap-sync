@@ -1,0 +1,12 @@
+# 統一換行處理，避免跨平台 checkout 時破壞檔案
+
+# 預設：文字檔在 repo 內存 LF
+* text=auto eol=lf
+
+# PowerShell 腳本：Windows 專用，保留 CRLF（含 UTF-8 BOM 才能正確讀中文）
+*.ps1 text eol=crlf
+
+# 二進位檔不做換行轉換
+*.png binary
+*.ico binary
+*.jpg binary
