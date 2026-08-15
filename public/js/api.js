@@ -44,11 +44,16 @@ App.api = (function () {
   }
 
   function get(params) {
+    var url = endpoint();
     var qs = Object.keys(params)
-      .filter(function (k) { return params[k] !== undefined && params[k] !== null; })
-      .map(function (k) { return encodeURIComponent(k) + '=' + encodeURIComponent(params[k]); })
+      .filter(function (n) { return params[n] !== undefined && params[n] !== null; })
+      .map(function (n) { return encodeURIComponent(n) + '=' + encodeURIComponent(params[n]); })
       .join('&');
-    return fetch(endpoint() + '?' + qs, { method: 'GET' }).then(parse);
+
+    // 端點網址本身可能已帶固定的存取參數（例如 ...?k=xxxx），
+    // 此時必須用 & 續接而非 ?，否則第二個 ? 會讓後面的參數全部失效。
+    var sep = url.indexOf('?') >= 0 ? '&' : '?';
+    return fetch(url + sep + qs, { method: 'GET' }).then(parse);
   }
 
   function parse(resp) {

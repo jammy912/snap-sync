@@ -63,6 +63,7 @@
    - `SHEET_ID`
    - `DRIVE_FOLDER_ID`
    - `ADMIN_TOKEN`（一組夠長的隨機字串，只給 PowerShell 用）
+   - `ACCESS_KEY`（**選用**，見下方「固定存取參數 `k`」；不設則停用該功能）
 4. 執行一次 **`setupSheets`** 函式，會自動建立五個分頁並把密碼欄設為純文字格式。
    > 五個分頁（TREE / QUEUE / USERS / SESSIONS / LOG）平時也會自動建立，
    > 但手動執行這次才會設定密碼欄格式——否則純數字密碼會被 Sheet 轉成數字、開頭 0 消失。
@@ -92,13 +93,29 @@
 > 純靜態網站無法在 runtime 讀環境變數，故由 build 指令產生 `public/js/config.js`。
 > **改了環境變數必須重新部署才生效。**
 
-> ⚠️ **`APPS_SCRIPT_URL` 必須是乾淨的 `/exec` 網址，不可自行附加 query string**
-> （例如 `?token=xxx`）。原因有三：
-> 1. `api.js` 的 GET 會在後面接 `?action=...`，變成兩個 `?` 而讓參數全部失效。
-> 2. `build-config.js` 的格式檢查會擋下，Vercel build 直接失敗。
-> 3. 固定 token 會被 build 進前端，開 DevTools 就看得到，且無法針對個人撤銷——
->    安全性反而低於現行的登入 + session token 機制。
-> 若目的是擋掉未登入的雜訊請求，該功能已內建（見下方「可靠性設計」）。
+### 固定存取參數 `k`（選用）
+
+可在端點網址附加一組固定亂數，擋掉「拿到網址就亂打」的路人與掃描器。
+**要設就兩邊都設，值必須一致：**
+
+| 設定位置 | 值 |
+|---|---|
+| Vercel 環境變數 `APPS_SCRIPT_URL` | `https://script.google.com/macros/s/xxx/exec?k=你的亂數` |
+| Apps Script 指令碼屬性 `ACCESS_KEY` | `你的亂數`（不含 `?k=`） |
+
+- **只設 Vercel、沒設 Apps Script** → 不檢查，形同沒加。
+- **只設 Apps Script、沒設 Vercel** → 前端全部被擋，**所有人登不進去**。
+- **兩邊都不設** → 功能停用，一切照舊（向下相容）。
+
+PowerShell 端**不需要**帶 `k`，內部端點靠 `ADMIN_TOKEN` 把關。
+
+> ⚠️ **參數名不可用 `token`、`action`、`id`**——會與前端送出的同名參數撞名。
+> 同名時 Apps Script 取第一個值，session token 會被固定值蓋掉，症狀是所有人
+> 都登不進去、錯誤訊息卻指向「請重新登入」，極難追查。
+> `build-config.js` 會在 build 階段擋下這種設定。
+
+> ℹ️ `k` 會被 build 進前端 `config.js`，**開 DevTools 就看得到**，因此它
+> 不是身分驗證，只是擋雜訊用。真正的存取控制仍是 session token 與 `ADMIN_TOKEN`。
 
 ### 4. PowerShell（內部）
 

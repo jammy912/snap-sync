@@ -78,6 +78,15 @@ function handle(e, method) {
       return json({ ok: false, error: 'BAD_REQUEST', message: 'Bad Request' });
     }
 
+    // 固定存取參數 k（選用）：擋掉路人層級的雜訊請求。
+    // 只在指令碼屬性有設 ACCESS_KEY 時才啟用，未設則跳過（向下相容）。
+    // 這不是身分驗證——k 會被 build 進前端而人人可見，真正的驗證仍靠
+    // session token 與 ADMIN_TOKEN。
+    if (!checkAccessKey(body, params)) {
+      throttleNoise('bad_access_key');
+      return json({ ok: false, error: 'BAD_REQUEST', message: 'Bad Request' });
+    }
+
     switch (action) {
       // --- PWA 端 ---
       case 'login':      return actionLogin(body);
@@ -173,6 +182,40 @@ function logEvent(event, detail) {
 var NOISE_LOG_INTERVAL_SEC = 300;   // 同類雜訊每 5 分鐘只記一次
 var LOGIN_MAX_ATTEMPTS = 10;        // 單一帳號每 LOGIN_WINDOW_SEC 內的失敗上限
 var LOGIN_WINDOW_SEC = 600;
+
+/**
+ * 檢查固定存取參數 k。
+ *
+ * 指令碼屬性 ACCESS_KEY 有設時才啟用；未設一律放行（向下相容，
+ * 也讓 PowerShell 端不必跟著改）。
+ *
+ * ⚠️ 這【不是】身分驗證：k 會被 build 進前端 config.js，任何人開
+ * DevTools 都看得到。它的作用只是擋掉「拿到網址就亂打」的路人與掃描器。
+ * 真正的存取控制仍是 session token（PWA）與 ADMIN_TOKEN（內部）。
+ *
+ * PowerShell 端不送 k，故內部端點在此一律放行——它們本來就用更強的
+ * ADMIN_TOKEN 驗證。
+ */
+function checkAccessKey(body, params) {
+  var expected;
+  try {
+    expected = PropertiesService.getScriptProperties().getProperty('ACCESS_KEY');
+  } catch (err) {
+    return true;    // 讀不到屬性時不擋，避免把自己鎖在門外
+  }
+  if (!expected) return true;      // 未啟用
+
+  var action = s(body.action || params.action || '');
+
+  // 內部端點（PowerShell）不需帶 k，改由 ADMIN_TOKEN 把關
+  if (action === 'updateTree' || action === 'queue' ||
+      action === 'download' || action === 'ack') {
+    return true;
+  }
+
+  var got = s(body.k || params.k || '');
+  return got === s(expected);
+}
 
 /**
  * 記錄雜訊請求，但同一類型在時間窗內只記一次，
