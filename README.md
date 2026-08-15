@@ -92,6 +92,14 @@
 > 純靜態網站無法在 runtime 讀環境變數，故由 build 指令產生 `public/js/config.js`。
 > **改了環境變數必須重新部署才生效。**
 
+> ⚠️ **`APPS_SCRIPT_URL` 必須是乾淨的 `/exec` 網址，不可自行附加 query string**
+> （例如 `?token=xxx`）。原因有三：
+> 1. `api.js` 的 GET 會在後面接 `?action=...`，變成兩個 `?` 而讓參數全部失效。
+> 2. `build-config.js` 的格式檢查會擋下，Vercel build 直接失敗。
+> 3. 固定 token 會被 build 進前端，開 DevTools 就看得到，且無法針對個人撤銷——
+>    安全性反而低於現行的登入 + session token 機制。
+> 若目的是擋掉未登入的雜訊請求，該功能已內建（見下方「可靠性設計」）。
+
 ### 4. PowerShell（內部）
 
 1. 複製 `powershell/config.sample.json` 為 `powershell/config.json`，填入端點、`ADMIN_TOKEN` 與本機路徑。
@@ -162,6 +170,10 @@ Date,Photos,Runs,Failed,Bytes,LastRun,Notes
 - **併發控制**：Apps Script 對 QUEUE 的追加與刪除以 `LockService` 上鎖；刪列以 id 比對而非列位置。
 - **永久刪除**：用 `Drive.Files.remove()` 而非 `setTrashed`——垃圾桶仍占 15GB 配額。
 - **路徑穿越防護**：Apps Script 與 PowerShell 兩端都擋 `..`，並驗證落地路徑未逸出根目錄。
+- **雜訊與暴力嘗試防護**：未帶 `action` 或未知 `action` 的請求直接擋下並取樣記錄
+  （同類型每 5 分鐘只記一次，避免掃描器灌爆 LOG 分頁）；`login` 以帳號為鍵做速率限制，
+  單一帳號 10 分鐘內失敗 10 次即暫時鎖定，**10 分鐘後自動解鎖**不需人工介入。
+  > Apps Script 取不到來源 IP（請求經 Google 邊緣轉送），故無法做 IP 級封鎖。
 - **權限隔離**：`upload` 在伺服器端驗證 `targetPath` 落在該使用者子樹內**且**命中 TREE 白名單。
   前端過濾只是體驗，伺服器端擋下才是真的隔離。
 - **離線佇列**：拍照一律先寫 IndexedDB 再嘗試上傳；失敗保留並以指數退避重送。

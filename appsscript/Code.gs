@@ -71,6 +71,13 @@ function handle(e, method) {
     var action = body.action || params.action || '';
     var token  = body.token  || params.token  || '';
 
+    // 未帶 action 的請求＝掃描器或誤觸網址的路人，直接擋掉不進業務邏輯。
+    // 回應刻意不透露這是什麼服務。
+    if (!action) {
+      throttleNoise('no_action');
+      return json({ ok: false, error: 'BAD_REQUEST', message: 'Bad Request' });
+    }
+
     switch (action) {
       // --- PWA 端 ---
       case 'login':      return actionLogin(body);
@@ -82,7 +89,8 @@ function handle(e, method) {
       case 'download':   return actionDownload(body, params, token);
       case 'ack':        return actionAck(body, token);
       default:
-        return json({ ok: false, error: 'UNKNOWN_ACTION', message: '未知的 action：' + action });
+        throttleNoise('unknown_action:' + String(action).slice(0, 40));
+        return json({ ok: false, error: 'UNKNOWN_ACTION', message: 'Bad Request' });
     }
   } catch (err) {
     // 任何未預期例外都回 JSON，避免 Apps Script 吐 HTML 錯誤頁讓前端無法解析
@@ -151,6 +159,69 @@ function logEvent(event, detail) {
   } catch (err) {
     // 記錄失敗不可影響主流程
   }
+}
+
+// ---------------------------------------------------------------------
+// 雜訊與暴力嘗試防護
+//
+// Apps Script 取不到來源 IP（請求經 Google 邊緣轉送），因此無法做 IP 級
+// 封鎖。以下用兩種可行的手段：
+//   1. 未帶 action／未知 action 的請求直接擋下，並「取樣」記錄避免灌爆 LOG。
+//   2. login 以「帳號」為鍵做速率限制，擋住對單一帳號的密碼暴力嘗試。
+// ---------------------------------------------------------------------
+
+var NOISE_LOG_INTERVAL_SEC = 300;   // 同類雜訊每 5 分鐘只記一次
+var LOGIN_MAX_ATTEMPTS = 10;        // 單一帳號每 LOGIN_WINDOW_SEC 內的失敗上限
+var LOGIN_WINDOW_SEC = 600;
+
+/**
+ * 記錄雜訊請求，但同一類型在時間窗內只記一次，
+ * 避免掃描器把 LOG 分頁灌爆（Sheet 有 1000 萬儲存格上限）。
+ */
+function throttleNoise(kind) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var key = 'noise_' + kind;
+    if (cache.get(key)) return;                       // 時間窗內已記過
+    cache.put(key, '1', NOISE_LOG_INTERVAL_SEC);
+    logEvent('NOISE', kind);
+  } catch (err) {
+    // 防護失敗不可影響主流程
+  }
+}
+
+/** 檢查該帳號是否已被暫時鎖定（失敗次數過多） */
+function isLoginLocked(username) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var n = parseInt(cache.get('lf_' + username) || '0', 10);
+    return n >= LOGIN_MAX_ATTEMPTS;
+  } catch (err) {
+    return false;
+  }
+}
+
+/** 累計一次登入失敗 */
+function bumpLoginFailure(username) {
+  try {
+    var cache = CacheService.getScriptCache();
+    var key = 'lf_' + username;
+    var n = parseInt(cache.get(key) || '0', 10) + 1;
+    cache.put(key, String(n), LOGIN_WINDOW_SEC);
+    if (n === LOGIN_MAX_ATTEMPTS) {
+      logEvent('LOGIN_LOCKED', username + ' 連續失敗 ' + n + ' 次，暫時鎖定 ' + LOGIN_WINDOW_SEC + ' 秒');
+    }
+    return n;
+  } catch (err) {
+    return 0;
+  }
+}
+
+/** 登入成功後清掉失敗計數 */
+function clearLoginFailure(username) {
+  try {
+    CacheService.getScriptCache().remove('lf_' + username);
+  } catch (err) { }
 }
 
 // ---------------------------------------------------------------------
@@ -256,6 +327,16 @@ function actionLogin(body) {
     return json({ ok: false, error: 'BAD_REQUEST', message: '請輸入帳號與密碼' });
   }
 
+  // 速率限制：擋住對單一帳號的密碼暴力嘗試。
+  // 訊息不透露「帳號被鎖」以外的資訊，避免用來探測帳號是否存在。
+  if (isLoginLocked(username)) {
+    return json({
+      ok: false,
+      error: 'TOO_MANY_ATTEMPTS',
+      message: '嘗試次數過多，請稍後再試'
+    });
+  }
+
   var users = readAll(SHEET_USERS, USERS_HEADERS);
   var user = null;
   for (var i = 0; i < users.length; i++) {
@@ -266,17 +347,22 @@ function actionLogin(body) {
   var FAIL = { ok: false, error: 'LOGIN_FAILED', message: '帳號或密碼錯誤' };
 
   if (!user) {
+    bumpLoginFailure(username);
     logEvent('LOGIN_FAIL', 'no such user: ' + username);
     return json(FAIL);
   }
   if (!isTrue(user.active)) {
+    bumpLoginFailure(username);
     logEvent('LOGIN_FAIL', 'inactive: ' + username);
     return json(FAIL);
   }
   if (s(user.password) !== password) {
+    bumpLoginFailure(username);
     logEvent('LOGIN_FAIL', 'bad password: ' + username);
     return json(FAIL);
   }
+
+  clearLoginFailure(username);
 
   var now = new Date();
   var expires = new Date(now.getTime() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000);
