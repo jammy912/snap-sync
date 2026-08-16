@@ -116,6 +116,39 @@ try {
             $bytes = [Convert]::FromBase64String($dl.data)
             if ($bytes.Length -eq 0) { throw '下載內容為空' }
 
+            # --- 2b. 下載內容校驗 ---
+            # 三個 md5 必須全部一致，任一不符或缺漏都不落地：
+            #   $queueMd5 上傳當下 Apps Script 存進 QUEUE 的（源頭事實）
+            #   $dlMd5    download 當下對 Drive 內容重算的（抓存放期間的變動）
+            #   $localMd5 本地對解碼結果算的（抓傳輸與 base64 解碼損毀）
+            $queueMd5 = if ($item.md5)      { ([string]$item.md5).ToLower() }      else { '' }
+            $dlMd5    = if ($dl.md5)        { ([string]$dl.md5).ToLower() }        else { '' }
+            $storedMd5= if ($dl.storedMd5)  { ([string]$dl.storedMd5).ToLower() }  else { '' }
+
+            $md5 = [Security.Cryptography.MD5]::Create()
+            try {
+                $localMd5 = [BitConverter]::ToString($md5.ComputeHash($bytes)).Replace('-', '').ToLower()
+            } finally { $md5.Dispose() }
+
+            # 以 QUEUE 存的為準；沒有就退而用 download 回報的 storedMd5
+            $expectedMd5 = if ($queueMd5) { $queueMd5 } elseif ($storedMd5) { $storedMd5 } else { '' }
+
+            if (-not $expectedMd5) {
+                # 舊資料（加 md5 欄位之前上傳的）沒有可比對的基準。
+                # 這種照片無法證明內容正確，落地後就要永久刪除雲端副本，
+                # 因此【不處理】留在雲端，由人工決定如何處置。
+                throw '此筆無 md5 基準值（md5 欄位加入前的舊資料），不落地以免無法驗證'
+            }
+
+            if ($localMd5 -ne $expectedMd5) {
+                throw "下載內容校驗失敗：應為 $expectedMd5、實得 $localMd5"
+            }
+
+            # Drive 端內容在存放期間被改動的話，這兩個會不一致
+            if ($dlMd5 -and $dlMd5 -ne $expectedMd5) {
+                throw "雲端內容與上傳時不符：上傳時 $expectedMd5、目前 $dlMd5"
+            }
+
             # --- 3. 寫檔（先寫暫存再改名，避免中途失敗留下半截檔案） ---
             $tmpPath = "$destPath.part"
             [IO.File]::WriteAllBytes($tmpPath, $bytes)
@@ -132,6 +165,19 @@ try {
             if ($written -ne $bytes.Length) {
                 throw "寫檔大小不符：預期 $($bytes.Length)、實得 $written"
             }
+
+            # --- 4b. 落地校驗：重讀磁碟算 MD5（這一步最關鍵）---
+            # 下一步就要永久刪除雲端副本，所以必須確認「磁碟上的內容」正確，
+            # 而不只是「記憶體中的內容」正確。磁碟壞軌、防毒軟體改寫、
+            # 檔案系統異常都會造成大小相符但內容不同。
+            # 一律重讀檔案，不可直接對 $bytes 再算一次——那驗不到寫入結果。
+            $diskMd5 = (Get-FileHash -LiteralPath $destPath -Algorithm MD5).Hash.ToLower()
+            if ($diskMd5 -ne $expectedMd5) {
+                # 壞檔留著會被誤認為已落地，直接刪掉並保留雲端副本重試
+                Remove-Item -LiteralPath $destPath -Force -ErrorAction SilentlyContinue
+                throw "落地檔案校驗失敗：應為 $expectedMd5、磁碟 $diskMd5（已刪除壞檔，雲端保留重試）"
+            }
+            Write-Log -Message "  校驗通過 md5=$diskMd5（上傳→雲端→下載→磁碟 四段一致）" -LogFile $LogFile
 
             # --- 5. 驗證通過，才 ack（永久刪雲端）---
             $ack = Invoke-SnapSyncApi -Endpoint $cfg.Endpoint -Method 'POST' -Payload @{

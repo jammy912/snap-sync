@@ -43,8 +43,21 @@ App.queue = (function () {
   function uploadOne(rec) {
     return blobToBase64(rec.blob).then(function (b64) {
       return App.api.upload(App.auth.token(), rec, b64);
-    }).then(function () {
-      // 成功：從本機移除（照片已在雲端，接著由 PowerShell 拉回落地）
+    }).then(function (resp) {
+      // 【上傳成功的唯一定義：校驗通過】
+      //
+      // 伺服器端會拿 Drive 回報的 md5Checksum 與收到的位元組比對，不一致
+      // 或無法取得都會回 ok:false，由 api.js 的 parse() 轉成例外走 catch，
+      // 照片因此留在佇列重送。
+      //
+      // 這裡再擋一次 verified：萬一日後伺服器改版回傳了未驗證的成功，
+      // 也不會靜默把本機唯一一份刪掉。刪除是不可逆的，多一層防護值得。
+      if (!resp || resp.verified !== true) {
+        var e = new Error('伺服器未回報校驗結果，保留本機重送');
+        e.code = 'NOT_VERIFIED';
+        throw e;
+      }
+      // 校驗通過，雲端已有正確副本，才能從本機移除
       return App.db.remove(rec.id);
     });
   }

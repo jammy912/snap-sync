@@ -49,7 +49,9 @@ var MAX_UPLOAD_BYTES = 10 * 1024 * 1024;  // 解碼後 10MB 上限
 var LOCK_TIMEOUT_MS  = 30000;
 
 var TREE_HEADERS     = ['path', 'parent', 'name', 'updatedAt'];
-var QUEUE_HEADERS    = ['id', 'targetPath', 'fileName', 'driveFileId', 'capturedAt', 'status', 'note'];
+// md5 是後加的欄位；既有資料沒有此欄，讀回會是空字串，
+// 各處一律「有值才比對、沒值只驗大小」以維持向下相容。
+var QUEUE_HEADERS    = ['id', 'targetPath', 'fileName', 'driveFileId', 'capturedAt', 'status', 'note', 'md5'];
 var USERS_HEADERS    = ['username', 'password', 'rootPath', 'displayName', 'active'];
 var SESSIONS_HEADERS = ['token', 'username', 'issuedAt', 'expiresAt'];
 var LOG_HEADERS      = ['time', 'event', 'detail'];
@@ -580,21 +582,90 @@ function actionUpload(body, token) {
     var folder = DriveApp.getFolderById(prop('DRIVE_FOLDER_ID'));
     var blob = Utilities.newBlob(bytes, 'image/jpeg', safeName);
     var file = folder.createFile(blob);
+    var fileId = file.getId();
+
+    // ---- 落地前校驗：Drive 上的內容必須與收到的位元組完全相同 ----
+    // 比對自己算的 MD5 與 Drive 回報的 md5Checksum。不一致代表寫入過程
+    // 損毀，此時【刪掉壞檔並回報失敗】，不寫入 QUEUE——寧可讓手機重送，
+    // 也不能讓壞檔進入佇列，否則 PowerShell 會把壞檔落地後永久刪除雲端。
+    var md5 = driveMd5(fileId);
+    var expected = md5Hex(bytes);
+
+    // 【嚴格模式】校驗未通過就不算上傳成功。
+    // 包含兩種情況，兩種都要擋：
+    //   1. md5 不一致  → Drive 上的內容與收到的不同，確定損毀。
+    //   2. 取不到 md5  → 無法證明正確。此時「放行」等於讓一張未經驗證的
+    //      照片進入佇列，PowerShell 之後會把它落地並【永久刪除雲端副本】，
+    //      錯了就救不回來。寧可讓手機留著重送，也不接受無法驗證的檔案。
+    // 壞檔一律刪掉，不留在暫存夾佔配額。
+    if (md5 !== expected) {
+      try { Drive.Files.remove(fileId); }
+      catch (e) { try { DriveApp.getFileById(fileId).setTrashed(true); } catch (e2) {} }
+
+      if (!md5) {
+        logEvent('UPLOAD_MD5_UNAVAILABLE', id + '：無法取得 Drive md5Checksum');
+        return json({
+          ok: false, error: 'CHECKSUM_UNAVAILABLE',
+          message: '伺服器無法校驗上傳內容，請稍後重試'
+        });
+      }
+
+      logEvent('UPLOAD_MD5_MISMATCH', id + ' 預期 ' + expected + ' 實得 ' + md5);
+      return json({
+        ok: false, error: 'CHECKSUM_MISMATCH',
+        message: '上傳內容校驗失敗，請重試'
+      });
+    }
 
     sheet(SHEET_QUEUE, QUEUE_HEADERS).appendRow([
       id,
       targetPath,
       safeName,
-      file.getId(),
+      fileId,
       capturedAt || new Date().toISOString(),
       'pending',
-      user.displayName
+      user.displayName,
+      expected            // md5：供 PowerShell 落地後再驗一次
     ]);
 
-    return json({ ok: true, driveFileId: file.getId() });
+    // 走到這裡代表 md5 已比對通過，verified 必為 true
+    return json({ ok: true, driveFileId: fileId, md5: expected, verified: true });
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * 取得 Drive 端算出的 MD5；取不到回傳 null。
+ *
+ * ⚠️ 取不到時 upload 會【拒絕】該次上傳（見 actionUpload 的嚴格模式），
+ * 因為無法證明內容正確就不能讓 PowerShell 落地後永久刪除雲端副本。
+ *
+ * 實測（2026-08-16，本專案使用 v2）：
+ *   不指定 fields 即回傳 md5Checksum，不需額外參數。
+ *   指定 fields:'size' 會報 "Invalid field selection size"——那是 v3 欄位，
+ *   v2 對應的是 fileSize。故此處不指定 fields，兩版皆可運作。
+ */
+function driveMd5(fileId) {
+  try {
+    if (typeof Drive === 'undefined') return null;
+    var meta = Drive.Files.get(fileId);
+    return meta && meta.md5Checksum ? String(meta.md5Checksum).toLowerCase() : null;
+  } catch (err) {
+    logEvent('MD5_LOOKUP_FAIL', fileId + ' : ' + err);
+    return null;
+  }
+}
+
+/** 位元組陣列 → MD5 十六進位字串（Apps Script 的 byte 是有號的，要補回 256） */
+function md5Hex(bytes) {
+  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, bytes);
+  var out = '';
+  for (var i = 0; i < digest.length; i++) {
+    var v = digest[i] < 0 ? digest[i] + 256 : digest[i];
+    out += ('0' + v.toString(16)).slice(-2);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------
@@ -656,7 +727,8 @@ function actionQueue(token) {
       fileName:    s(rows[i].fileName),
       driveFileId: s(rows[i].driveFileId),
       capturedAt:  s(rows[i].capturedAt),
-      note:        s(rows[i].note)
+      note:        s(rows[i].note),
+      md5:         s(rows[i].md5)      // 舊資料為空字串，PowerShell 端會跳過比對
     });
   }
   return json({ ok: true, count: out.length, items: out });
@@ -677,12 +749,18 @@ function actionDownload(body, params, token) {
 
     var fileId = s(rows[i].driveFileId);
     var blob = DriveApp.getFileById(fileId).getBlob();
+    var raw = blob.getBytes();
+
+    // 回傳當下重算一次，讓 PowerShell 能驗「Drive 讀出來的」而非只驗
+    // 「當初存進去的」——中間若被改動，這裡就會與 QUEUE 的 md5 不同。
     return json({
       ok: true,
       id: id,
       fileName: s(rows[i].fileName),
       targetPath: s(rows[i].targetPath),
-      data: Utilities.base64Encode(blob.getBytes())
+      md5: md5Hex(raw),
+      storedMd5: s(rows[i].md5),
+      data: Utilities.base64Encode(raw)
     });
   }
   return json({ ok: false, error: 'NOT_FOUND', message: '查無此 id：' + id });
@@ -746,7 +824,18 @@ function setupSheets() {
   var users = sheet(SHEET_USERS, USERS_HEADERS);
   users.getRange('B2:B').setNumberFormat('@');
 
-  Logger.log('分頁建立完成：TREE / QUEUE / USERS / SESSIONS / LOG');
+  // md5 欄是後加的：既有 QUEUE 分頁的表頭沒有它，要補上才寫得進去。
+  // 純文字格式，避免全數字的雜湊被 Sheet 當成數字（會變科學記號）。
+  var q = sheet(SHEET_QUEUE, QUEUE_HEADERS);
+  var qHead = q.getRange(1, 1, 1, QUEUE_HEADERS.length).getValues()[0];
+  for (var c = 0; c < QUEUE_HEADERS.length; c++) {
+    if (s(qHead[c]) !== QUEUE_HEADERS[c]) {
+      q.getRange(1, c + 1).setValue(QUEUE_HEADERS[c]);
+    }
+  }
+  q.getRange(2, QUEUE_HEADERS.length, q.getMaxRows() - 1, 1).setNumberFormat('@');
+
+  Logger.log('分頁建立完成：TREE / QUEUE / USERS / SESSIONS / LOG（QUEUE 已含 md5 欄）');
 }
 
 /**
@@ -793,6 +882,61 @@ function diagnoseDrive() {
   } catch (err) {
     out.push('✗ 無法存取暫存夾：' + err);
     out.push('  請確認指令碼屬性 DRIVE_FOLDER_ID 正確。');
+  }
+
+  Logger.log(out.join('\n'));
+}
+
+/**
+ * 診斷 Drive 是否回傳 md5Checksum / sha256Checksum（在編輯器手動執行）。
+ *
+ * 進階服務對這類欄位通常要明確指定 fields 才會回傳，實際行為以本函式
+ * 的輸出為準，不要憑印象假設。
+ */
+function diagnoseChecksum() {
+  var out = [];
+  if (typeof Drive === 'undefined') {
+    Logger.log('✗ Drive 未定義，請先啟用進階 Drive 服務（見 diagnoseDrive）');
+    return;
+  }
+
+  var folder = DriveApp.getFolderById(prop('DRIVE_FOLDER_ID'));
+  var tmp = folder.createFile('__checksum_selftest__.jpg',
+    Utilities.newBlob([1, 2, 3, 4, 5], 'image/jpeg').getDataAsString(), 'image/jpeg');
+  var tmpId = tmp.getId();
+  out.push('測試檔 ' + tmpId);
+
+  try {
+    // 不指定 fields
+    var a = Drive.Files.get(tmpId);
+    out.push('不指定 fields → md5Checksum = ' + (a.md5Checksum || '（無）'));
+
+    // 版本偵測：size 是 v3 欄位、fileSize 是 v2，用哪個能過就知道是哪一版
+    var b = a, ver = 'v2';
+    try {
+      b = Drive.Files.get(tmpId, { fields: 'id,size,md5Checksum,sha256Checksum' });
+      ver = 'v3';
+    } catch (e3) {
+      out.push('（v3 欄位被拒，判定為 v2：' + String(e3).slice(0, 60) + '…）');
+    }
+    out.push('進階服務版本 = ' + ver);
+    out.push('  md5Checksum    = ' + (b.md5Checksum || '（無）'));
+    out.push('  sha256Checksum = ' + (b.sha256Checksum || '（無，v2 不支援）'));
+    out.push('  大小           = ' + (b.size || b.fileSize || '（無）'));
+
+    // 與自己算的比對，確認 Drive 的值算法一致
+    var bytes = DriveApp.getFileById(tmpId).getBlob().getBytes();
+    var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, bytes);
+    var hex = digest.map(function (v) {
+      return ('0' + (v < 0 ? v + 256 : v).toString(16)).slice(-2);
+    }).join('');
+    out.push('自行計算 MD5 = ' + hex);
+    out.push(hex === b.md5Checksum ? '✓✓ 兩者一致，可用於比對' : '✗ 不一致，需檢查');
+  } catch (err) {
+    out.push('✗ 取得失敗：' + err);
+  } finally {
+    try { Drive.Files.remove(tmpId); out.push('測試檔已刪除'); }
+    catch (e) { out.push('⚠️ 測試檔 ' + tmpId + ' 未刪除，請手動處理'); }
   }
 
   Logger.log(out.join('\n'));
