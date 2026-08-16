@@ -38,12 +38,13 @@ App.app = (function () {
       buttons[i].classList.toggle('active', buttons[i].dataset.tab === tab);
     }
     $('cameraView').classList.toggle('active', tab === 'camera');
-    $('treeView').classList.toggle('active', tab === 'tree');
     $('queueView').classList.toggle('active', tab === 'queue');
     $('settingsView').classList.toggle('active', tab === 'settings');
 
+    // 切分頁時關掉目錄浮層，避免它蓋在別的分頁上
+    App.tree.closeSheet();
+
     if (tab === 'queue') App.queue.render();
-    if (tab === 'tree') App.tree.render();
   }
 
   function updateNet() {

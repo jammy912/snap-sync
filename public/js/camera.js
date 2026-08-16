@@ -56,7 +56,7 @@ App.camera = (function () {
     if (!v.videoWidth) { toast('相機尚未就緒'); return; }
 
     var target = App.tree.selectedPath();
-    if (!target) { toast('請先選擇上傳目錄'); App.app.switchTab('tree'); return; }
+    if (!target) { toast('請先選擇上傳目錄'); App.tree.openSheet(); return; }
 
     var st = App.app.settings();
     var max = st.maxEdge;
@@ -90,7 +90,11 @@ App.camera = (function () {
       };
 
       App.db.add(rec).then(function () {
-        toast('已存入佇列 (' + w + '×' + h + ', ' + App.util.fmtSize(blob.size) + ')');
+        // 明確講出存到哪個目錄——整批拍完才發現選錯目錄的代價很高。
+        // 路徑深時只顯示最後兩層，否則在手機上會被截斷。
+        var parts = target.split('/');
+        var shown = parts.length > 2 ? '…/' + parts.slice(-2).join('/') : target;
+        toast('已存至 ' + shown + ' · ' + App.util.fmtSize(blob.size));
         App.queue.refreshBadge();
         // 立即嘗試送出（失敗會留在佇列，由重送機制處理）
         App.queue.flush(true);

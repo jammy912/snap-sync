@@ -92,13 +92,35 @@ nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent
 #cameraView { display: none; flex-direction: column; height: 100%; }
 #cameraView.active { display: flex; }
 
+/* 整條是按鈕，點任何位置都能開目錄浮層（工地戴手套也好按） */
 .target-bar {
-  padding: 10px 14px; background: var(--panel2); border-bottom: 1px solid var(--border);
-  font-size: 13px; display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+  width: 100%; padding: 12px 14px; background: var(--panel2);
+  border: none; border-bottom: 1px solid var(--border);
+  font-size: 13px; display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0; cursor: pointer; text-align: left;
+  color: var(--text); font-family: inherit;
 }
+.target-bar:active { background: var(--panel); }
 .target-bar .label { color: var(--muted); flex-shrink: 0; }
-.target-bar .value { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.target-bar .value.unset { color: var(--warn); }
+.target-bar .value {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 15px; font-weight: 600;
+}
+.target-bar .value.unset { color: var(--warn); font-weight: 400; }
+.target-bar .caret { color: var(--muted); font-size: 11px; flex-shrink: 0; }
+
+/* 未選目錄時蓋在相機上的引導，點了直接開選單 */
+#needTarget {
+  position: absolute; inset: 0; z-index: 5;
+  background: rgba(18,18,28,.82);
+  border: none; color: var(--text); cursor: pointer; font-family: inherit;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+}
+#needTarget .big { font-size: 17px; font-weight: 600; color: var(--warn); }
+#needTarget .sub {
+  font-size: 13px; color: var(--muted);
+  border: 1px solid var(--border); border-radius: 999px; padding: 7px 16px;
+}
 
 .cam-wrap {
   position: relative; flex: 1; background: #000;
@@ -127,8 +149,58 @@ nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent
 }
 
 /* ---------- 目錄樹 ---------- */
-#treeView { display: none; padding: 12px; }
-#treeView.active { display: block; }
+/* 目錄選擇浮層（由下滑出，取代原本的「目錄」分頁） */
+.sheet-backdrop {
+  position: fixed; inset: 0; z-index: 250;
+  background: rgba(0,0,0,.55);
+  display: flex; align-items: flex-end;
+  animation: fadeIn .15s ease;
+}
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes slideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }
+
+.sheet {
+  width: 100%; max-height: 78vh;
+  background: var(--panel);
+  border-radius: 16px 16px 0 0;
+  border-top: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  animation: slideUp .22s cubic-bezier(.2,.8,.2,1);
+  /* iPhone 底部橫條不要蓋住內容 */
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.sheet-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 16px 10px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.sheet-title { font-size: 16px; font-weight: 600; flex: 1; }
+.sheet-close {
+  width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+  background: var(--panel2); border: 1px solid var(--border);
+  color: var(--text); font-size: 15px; cursor: pointer;
+}
+.sheet-body { overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 8px 12px; flex: 1; }
+.sheet-foot {
+  display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted);
+  padding: 10px 16px; border-top: 1px solid var(--border); flex-shrink: 0;
+}
+.sheet-foot .spacer { flex: 1; }
+
+/* 最近使用的目錄捷徑 */
+.recent-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.recent-label { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+.recent-chips { display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.recent-chip {
+  padding: 7px 12px; border-radius: 999px; white-space: nowrap; flex-shrink: 0;
+  background: var(--panel2); border: 1px solid var(--border);
+  color: var(--text); font-size: 13px; cursor: pointer; max-width: 200px;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.recent-chip.active { background: rgba(79,124,255,.18); border-color: var(--accent); }
+
 .tree-node { user-select: none; }
 .tree-row {
   display: flex; align-items: center; gap: 6px;

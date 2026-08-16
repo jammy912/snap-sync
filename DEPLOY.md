@@ -271,7 +271,7 @@ PowerShell 端**不需要**帶 `k`，內部端點靠 `ADMIN_TOKEN` 把關。
 | 改動位置 | 需要的動作 |
 |---|---|
 | `appsscript/Code.gs` | 重貼編輯器 → **部署新版本**（否則跑舊碼） |
-| `public/**` | push 到 GitHub，Vercel 自動部署 |
+| `public/**` | push 到 GitHub，Vercel 自動部署，**並把 `sw.js` 的 `CACHE` 版本號 +1** |
 | Vercel 環境變數 | **必須手動 Redeploy** |
 | 指令碼屬性 / 進階服務 | 即時生效，不必重新部署 |
 | `powershell/**` | 直接生效，下一輪排程即採用 |
@@ -285,6 +285,8 @@ PowerShell 端**不需要**帶 `k`，內部端點靠 `ADMIN_TOKEN` 把關。
 | Drive 一直長大 | `ack` 的 `driveDeleted` 是否為 `false` → 執行 `diagnoseDrive()` |
 | 排程有沒有在跑 | `powershell/logs/daily-sync-queue.csv` 的 `Runs` 欄（含空跑也會累加） |
 | 前端報「端點未設定」 | Vercel 的 `APPS_SCRIPT_URL` 沒設或沒重新部署 |
+| 手機還是舊版畫面 | `sw.js` 的 `CACHE` 版本號沒加；手機**完全關掉 PWA 再開** |
+| 佇列數字一直不動 | 已修（`queue.js` 的 `tick()`）；若復發先確認手機拿到的是新版前端 |
 
 ### 帳號管理
 

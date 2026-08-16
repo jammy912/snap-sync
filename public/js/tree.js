@@ -15,12 +15,53 @@ App.tree = (function () {
   var $ = App.util.$;
   var toast = App.util.toast;
   var META_KEY = 'tree_cache';
+  var RECENT_KEY = 'ss_recent_targets';
+  var RECENT_MAX = 5;
 
   var flat = [];          // [{path, parent, name}]
   var selected = null;    // 目前選定的相對路徑
   var expanded = {};      // { path: true }
 
   function selectedPath() { return selected; }
+
+  /* ---------- 最近使用的目錄 ---------- */
+
+  function recentList() {
+    try {
+      var v = JSON.parse(localStorage.getItem(RECENT_KEY));
+      return Array.isArray(v) ? v : [];
+    } catch (e) { return []; }
+  }
+
+  function pushRecent(path) {
+    if (!path) return;
+    var list = recentList().filter(function (p) { return p !== path; });
+    list.unshift(path);
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, RECENT_MAX))); } catch (e) {}
+  }
+
+  function renderRecent() {
+    var bar = $('recentBar');
+    var box = $('recentChips');
+    // 只留仍存在於目前樹中的（目錄可能被刪或改名）
+    var exists = {};
+    for (var i = 0; i < flat.length; i++) exists[flat[i].path] = true;
+    var list = recentList().filter(function (p) { return exists[p]; });
+
+    box.innerHTML = '';
+    if (!list.length) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+
+    list.forEach(function (p) {
+      var chip = document.createElement('button');
+      chip.className = 'recent-chip' + (p === selected ? ' active' : '');
+      // 只顯示最後一層，路徑深時才看得清楚；完整路徑放 title
+      chip.textContent = p.split('/').pop();
+      chip.title = p;
+      chip.onclick = function () { choose(p); };
+      box.appendChild(chip);
+    });
+  }
 
   function setSelected(path) {
     selected = path;
@@ -32,8 +73,39 @@ App.tree = (function () {
       label.textContent = '尚未選擇目錄';
       label.classList.add('unset');
     }
+    // 未選目錄時在相機上蓋一層引導（比只停用快門明確）
+    var guide = $('needTarget');
+    if (guide) guide.style.display = path ? 'none' : 'flex';
+
     App.camera.refreshShutterState();
     try { localStorage.setItem('ss_last_target', path || ''); } catch (e) {}
+  }
+
+  /** 選定目錄：記入最近使用、關閉浮層回到相機 */
+  function choose(path) {
+    setSelected(path);
+    pushRecent(path);
+    expandTo(path);
+    render();
+    closeSheet();
+    toast('已選擇：' + path);
+  }
+
+  /* ---------- 浮層開關 ---------- */
+
+  function openSheet() {
+    $('treeSheet').style.display = 'flex';
+    expandTo(selected);
+    render();
+    renderRecent();
+  }
+
+  function closeSheet() {
+    $('treeSheet').style.display = 'none';
+  }
+
+  function isSheetOpen() {
+    return $('treeSheet').style.display !== 'none';
   }
 
   /** 由扁平清單組出 { parentPath: [children] } */
@@ -93,11 +165,7 @@ App.tree = (function () {
 
           row.appendChild(toggle);
           row.appendChild(name);
-          row.onclick = function () {
-            setSelected(node.path);
-            render();
-            toast('已選擇：' + node.path);
-          };
+          row.onclick = function () { choose(node.path); };
 
           wrap.appendChild(row);
 
@@ -142,6 +210,7 @@ App.tree = (function () {
       setSelected(null);
     }
     render();
+    renderRecent();
   }
 
   /** 從伺服器抓最新目錄樹；失敗則沿用快取 */
@@ -172,12 +241,28 @@ App.tree = (function () {
   }
 
   function init() {
-    $('refreshTreeBtn').onclick = function () { refresh(false); };
-    $('pickTargetBtn').onclick = function () { App.app.switchTab('tree'); };
+    $('refreshTreeBtn').onclick = function () {
+      refresh(false).then(renderRecent);
+    };
+    $('targetBar').onclick = openSheet;
+    $('needTarget').onclick = openSheet;
+    $('closeSheetBtn').onclick = closeSheet;
+
+    // 點浮層外的暗色區域關閉；點面板內不關
+    $('treeSheet').onclick = function (e) {
+      if (e.target === $('treeSheet')) closeSheet();
+    };
+    $('treeSheetPanel').onclick = function (e) { e.stopPropagation(); };
+
+    // Android 實體返回鍵／瀏覽器上一頁優先關浮層，不要直接離開 App
+    window.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && isSheetOpen()) closeSheet();
+    });
   }
 
   return {
     init: init, refresh: refresh, loadCache: loadCache,
-    selectedPath: selectedPath, setSelected: setSelected, render: render
+    selectedPath: selectedPath, setSelected: setSelected, render: render,
+    openSheet: openSheet, closeSheet: closeSheet, renderRecent: renderRecent
   };
 })();

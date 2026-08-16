@@ -43,7 +43,6 @@
 
 <nav class="tabs">
   <button data-tab="camera" class="active">拍照</button>
-  <button data-tab="tree">目錄</button>
   <button data-tab="queue">佇列 <span id="countBadge"></span></button>
   <button data-tab="settings">設定</button>
 </nav>
@@ -51,36 +50,28 @@
 <main>
   <!-- 拍照 -->
   <section id="cameraView" class="active">
-    <div class="target-bar">
+    <!-- 整條可點，開啟目錄選擇浮層。目錄不再是獨立分頁，避免拍照時要切分頁 -->
+    <button class="target-bar" id="targetBar">
       <span class="label">上傳至</span>
       <span class="value unset" id="targetLabel">尚未選擇目錄</span>
-      <button class="mini-btn" id="pickTargetBtn">選擇</button>
-    </div>
+      <span class="caret">▼</span>
+    </button>
     <div class="cam-wrap">
       <video id="video" autoplay playsinline muted style="display:none"></video>
       <div id="camPlaceholder">
         點下方按鈕開啟相機<br>
         <span style="font-size:13px">(需要相機權限)</span>
       </div>
+      <!-- 未選目錄時的引導，蓋在相機畫面上，可直接點開選單 -->
+      <button id="needTarget" style="display:none">
+        <span class="big">請先選擇上傳目錄</span>
+        <span class="sub">點這裡選擇</span>
+      </button>
     </div>
     <div class="cam-controls">
       <button class="icon-btn" id="switchBtn" title="切換鏡頭" style="display:none">🔄</button>
       <button class="shutter" id="shutterBtn" disabled></button>
       <button class="icon-btn" id="startCamBtn" title="開啟相機">📷</button>
-    </div>
-  </section>
-
-  <!-- 目錄樹 -->
-  <section id="treeView">
-    <div class="toolbar">
-      <span id="treeInfo">—</span>
-      <span class="spacer"></span>
-      <button class="mini-btn" id="refreshTreeBtn">重新整理</button>
-    </div>
-    <div id="treeRoot"></div>
-    <div class="empty" id="treeEmpty" style="display:none">
-      尚無目錄資料<br>
-      <span style="font-size:13px">請確認內部排程已推送目錄樹，然後按「重新整理」</span>
     </div>
   </section>
 
@@ -129,6 +120,32 @@
     </div>
   </section>
 </main>
+
+<!-- 目錄選擇浮層：由下滑出，選定後自動關閉回到相機 -->
+<div class="sheet-backdrop" id="treeSheet" style="display:none">
+  <div class="sheet" id="treeSheetPanel">
+    <div class="sheet-head">
+      <span class="sheet-title">選擇上傳目錄</span>
+      <button class="sheet-close" id="closeSheetBtn" aria-label="關閉">✕</button>
+    </div>
+    <div class="recent-bar" id="recentBar" style="display:none">
+      <span class="recent-label">最近</span>
+      <div class="recent-chips" id="recentChips"></div>
+    </div>
+    <div class="sheet-body">
+      <div id="treeRoot"></div>
+      <div class="empty" id="treeEmpty" style="display:none">
+        尚無目錄資料<br>
+        <span style="font-size:13px">請確認內部排程已推送目錄樹，然後按下方「重新整理」</span>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <span id="treeInfo">—</span>
+      <span class="spacer"></span>
+      <button class="mini-btn" id="refreshTreeBtn">重新整理</button>
+    </div>
+  </div>
+</div>
 
 <canvas id="canvas" style="display:none"></canvas>
 <div id="toast"></div>
