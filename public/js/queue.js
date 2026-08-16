@@ -49,36 +49,44 @@ App.queue = (function () {
     return (Date.now() - rec.lastTryAt) >= retryDelay(rec);
   }
 
-  /* ---------- 自動重送 ---------- */
+  /* ---------- 確認與自動重送 ---------- */
   //
   // 【送出的觸發是手動、重送是自動】
   // 使用者按過「傳送」＝已經確認過這批要送，之後就不該再要求他盯著畫面
   // 一直按重送——現場常常是網路時好時壞，收訊回來時人可能在別的樓層。
-  // 但沒按過傳送前絕不自動送（拍到一半、還沒檢查的照片不該偷跑）。
-  // 存 localStorage：關掉 App 再開仍要繼續送已確認過的那批，
-  // 否則現場關了 App，照片就停在手機裡等人再按一次。
-  var AUTO_KEY = 'ss_auto_retry';
-  var autoRetry = (function () {
-    try { return localStorage.getItem(AUTO_KEY) === '1'; } catch (e) { return false; }
-  })();
-  var retryTimer = null;
+  //
+  // ★ 確認狀態記在【每一筆照片】上（rec.confirmed），不是一個全域旗標。
+  //   全域旗標會讓「上一批還沒傳完時新拍的照片」被自動帶著送出去——
+  //   那批根本沒被確認過，使用者可能正要檢查或刪掉重拍。
+  //   改成逐筆標記後，未確認的照片無論如何都不會被送。
 
-  function setAutoRetry(on) {
-    autoRetry = on;
-    try {
-      if (on) localStorage.setItem(AUTO_KEY, '1');
-      else localStorage.removeItem(AUTO_KEY);
-    } catch (e) {}
+  /** 這筆是否已被使用者確認要送 */
+  function isConfirmed(r) { return r.confirmed === true; }
+
+  /** 清掉所有確認狀態（登出／憑證失效時用，避免換人登入後被自動送出） */
+  function unconfirmAll() {
+    return App.db.all().then(function (recs) {
+      return recs.filter(isConfirmed).reduce(function (chain, r) {
+        return chain.then(function () { return App.db.patch(r.id, { confirmed: false }); });
+      }, Promise.resolve());
+    }).catch(function () { /* 清不掉不影響主流程 */ });
   }
+
+  /** 取出所有待送（未送出）的記錄 */
+  function pendingOf(recs) {
+    return recs.filter(function (r) { return r.status !== 'sent'; });
+  }
+
+  var retryTimer = null;
 
   /** 依最接近的退避到期時間排下一次重送 */
   function scheduleRetry() {
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-    if (!autoRetry) return;
 
     App.db.all().then(function (recs) {
-      var pending = recs.filter(function (r) { return r.status !== 'sent'; });
-      if (!pending.length) { setAutoRetry(false); return; }  // 全送完就停，不留空轉的計時器
+      // 只看已確認的：未確認的照片不該讓重試計時器空轉
+      var pending = pendingOf(recs).filter(isConfirmed);
+      if (!pending.length) return;   // 已確認的都送完了，不留空轉的計時器
 
       // 取最早可以重試的那一筆，等到它到期就整批再跑一次
       var wait = Math.min.apply(null, pending.map(function (r) {
@@ -147,24 +155,37 @@ App.queue = (function () {
     if (!App.auth.isLoggedIn()) return Promise.resolve();
 
     var manual = !silent;
-    if (manual) {
-      setAutoRetry(true);               // 按過傳送＝之後失敗自動重送
-      if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
-    }
-
-    if (!navigator.onLine) {
-      if (manual) toast('目前離線，恢復連線後會自動送出');
-      scheduleRetry();                  // 離線也要排，連線回來時才追得上
-      return Promise.resolve();
-    }
+    if (manual && retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
 
     flushing = true;
     var ok = 0, fail = 0, authFailed = false;
 
-    return App.db.all().then(function (recs) {
-      var pending = recs.filter(function (r) {
+    // 手動按傳送：先把「目前佇列裡的照片」逐筆標記為已確認。
+    // 標記完才開始送，因此標記之後才拍的照片不在這一批裡，
+    // 必須等這批送完、使用者再按一次傳送才會送出。
+    var prepare = manual
+      ? App.db.all().then(function (recs) {
+          var todo = pendingOf(recs).filter(function (r) { return !isConfirmed(r); });
+          return todo.reduce(function (chain, r) {
+            return chain.then(function () { return App.db.patch(r.id, { confirmed: true }); });
+          }, Promise.resolve());
+        })
+      : Promise.resolve();
+
+    return prepare.then(function () {
+      if (!navigator.onLine) {
+        if (manual) toast('目前離線，恢復連線後會自動送出');
+        return null;                    // 交給 finally 的 scheduleRetry 接手
+      }
+      return App.db.all();
+    }).then(function (recs) {
+      if (!recs) return;
+
+      var pending = pendingOf(recs).filter(function (r) {
+        // 【只送已確認的】未確認＝使用者還沒按傳送檢查過，一律不送
+        if (!isConfirmed(r)) return false;
         // 手動按傳送時不理會退避——使用者要的就是「現在送」
-        return r.status !== 'sent' && (manual || shouldRetry(r));
+        return manual || shouldRetry(r);
       });
       if (!pending.length) return;
 
@@ -180,12 +201,12 @@ App.queue = (function () {
           }).catch(function (err) {
             if (App.auth.isAuthError(err)) {
               // 憑證失效：停止本輪，保留所有照片。
-              // 同時關掉自動重送——token 已死，再重試也只是白打端點，
-              // 等使用者重新登入後再由「傳送」重新啟動。
+              // token 已死，再重試也只是白打端點，等重新登入後由使用者
+              // 再按一次傳送。unconfirmAll 會把確認狀態清掉，
+              // 避免換人登入後前一個人的照片被自動送出。
               authFailed = true;
-              setAutoRetry(false);
               App.auth.forceLogout(err.message);
-              return;
+              return unconfirmAll();
             }
             fail++;
             // 只寫回重試欄位，絕不整筆 put——那會連 blob 一起寫回去，
@@ -202,13 +223,18 @@ App.queue = (function () {
         });
       }, Promise.resolve());
     }).then(function () {
-      if (ok || fail) {
-        if (!silent || fail) {
-          toast('上傳完成：成功 ' + ok + '、失敗 ' + fail
-            + (fail ? '（失敗的會自動重送）' : ''));
-        }
-      }
-      return tick();               // 收尾再更新一次（涵蓋整批都被退避跳過的情況）
+      if (!(ok || fail)) return tick();
+      if (silent && !fail) return tick();
+
+      // 這批送出期間新拍的照片沒被送（未確認），要明講，
+      // 否則使用者會以為「傳送完了」就收工走人。
+      return App.db.all().then(function (recs) {
+        var waiting = pendingOf(recs).filter(function (r) { return !isConfirmed(r); }).length;
+        toast('上傳完成：成功 ' + ok + '、失敗 ' + fail
+          + (fail ? '（失敗的會自動重送）' : '')
+          + (waiting ? '；另有 ' + waiting + ' 張新照片待確認' : ''));
+        return tick();
+      });
     }).catch(function (err) {
       toast('上傳流程錯誤：' + err.message);
     }).finally(function () {
@@ -441,14 +467,37 @@ App.queue = (function () {
       if (!recs.length) { bar.style.display = 'none'; return; }
       bar.style.display = 'flex';
 
-      var total = 0, failed = 0;
-      recs.forEach(function (r) {
-        total += r.size || 0;
-        if (r.retryCount > 0) failed++;
-      });
-      $('sendInfo').textContent = recs.length + ' 張待傳送 · ' + App.util.fmtSize(total)
-        + (failed ? '（' + failed + ' 張曾失敗）' : '');
-      $('sendNowBtn').disabled = flushing;
+      var pending = pendingOf(recs);
+      var waiting = pending.filter(function (r) { return !isConfirmed(r); });
+      var sending = pending.filter(isConfirmed);
+
+      var wSize = 0;
+      waiting.forEach(function (r) { wSize += r.size || 0; });
+      var failed = pending.filter(function (r) { return r.retryCount > 0; }).length;
+
+      var btn = $('sendNowBtn');
+
+      if (flushing) {
+        // 傳送中：按鈕停用，並明講新拍的要等這批完成再確認
+        $('sendInfo').textContent = '傳送中… 剩 ' + sending.length + ' 張'
+          + (waiting.length ? '，' + waiting.length + ' 張待這批完成後確認' : '');
+        btn.disabled = true;
+        btn.textContent = '傳送中…';
+        return;
+      }
+
+      btn.disabled = false;
+      if (waiting.length) {
+        // 有沒確認過的照片：按鈕就是要送這些
+        $('sendInfo').textContent = waiting.length + ' 張待確認傳送 · ' + App.util.fmtSize(wSize)
+          + (sending.length ? '（另有 ' + sending.length + ' 張排隊重送中）' : '');
+        btn.textContent = '傳送';
+      } else {
+        // 全部確認過了，只剩失敗待自動重送
+        $('sendInfo').textContent = sending.length + ' 張已確認，等待自動重送'
+          + (failed ? '（' + failed + ' 張曾失敗）' : '');
+        btn.textContent = '立即重試';
+      }
     });
   }
 
@@ -457,29 +506,33 @@ App.queue = (function () {
     $('retryAllBtn').onclick = function () { flush(false); };
     $('sendNowBtn').onclick = function () { flush(false); };
 
-    // 恢復連線：已經按過傳送的就立刻續送；沒按過的只提示，不偷跑
+    // 恢復連線：只續送【已確認】的那些；未確認的只提示，不偷跑
     //（使用者可能還在拍、或正要刪掉拍壞的那幾張）。
     window.addEventListener('online', function () {
       App.db.all().then(function (recs) {
-        if (!recs.length) return;
-        if (autoRetry) {
-          toast('已恢復連線，繼續送出 ' + recs.length + ' 張');
+        var pending = pendingOf(recs);
+        if (!pending.length) return;
+        var confirmed = pending.filter(isConfirmed).length;
+        if (confirmed) {
+          toast('已恢復連線，繼續送出 ' + confirmed + ' 張');
           flush(true);
         } else {
-          toast('已恢復連線，' + recs.length + ' 張待傳送');
+          toast('已恢復連線，' + pending.length + ' 張待確認傳送');
         }
       });
     });
   }
 
-  /** 啟動時呼叫：上次按過傳送但沒送完的，繼續送 */
+  /** 啟動時呼叫：上次已確認但沒送完的，繼續送（未確認的不動） */
   function resumeAutoRetry() {
-    if (!autoRetry) return Promise.resolve();
-    return flush(true);
+    return App.db.all().then(function (recs) {
+      if (!pendingOf(recs).filter(isConfirmed).length) return;
+      return flush(true);
+    });
   }
 
   return {
     init: init, flush: flush, render: render, refreshBadge: refreshBadge,
-    resumeAutoRetry: resumeAutoRetry
+    resumeAutoRetry: resumeAutoRetry, unconfirmAll: unconfirmAll
   };
 })();

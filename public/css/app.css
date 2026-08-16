@@ -33,11 +33,16 @@ header {
   display: flex; align-items: center; justify-content: space-between;
   flex-shrink: 0;
 }
-header h1 { font-size: 17px; font-weight: 600; }
-.status-dot { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
-.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
-.dot.online { background: var(--ok); }
-.dot.offline { background: var(--danger); }
+/* 狀態列放大後，標題在窄螢幕上要讓位，不能把狀態擠掉 */
+header h1 { font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* 連線狀態：現場戴手套、隔著距離也要一眼看到斷線，所以字和點都放大 */
+.status-dot { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: var(--muted); flex-shrink: 0; margin-left: 12px; }
+.dot { width: 14px; height: 14px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+.dot.online { background: var(--ok); box-shadow: 0 0 0 3px rgba(46,193,110,.20); }      /* #2ec16e */
+.dot.offline { background: var(--danger); box-shadow: 0 0 0 3px rgba(224,64,94,.20); }  /* #e0405e */
+/* 文字跟著狀態變色，離線時整組是紅的，掃一眼就知道 */
+.status-dot.is-online { color: var(--ok); }
+.status-dot.is-offline { color: var(--danger); }
 
 main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 

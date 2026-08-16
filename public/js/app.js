@@ -51,6 +51,9 @@ App.app = (function () {
     var on = navigator.onLine;
     $('netDot').className = 'dot ' + (on ? 'online' : 'offline');
     $('netText').textContent = on ? '線上' : '離線';
+    // 整組（含文字）跟著狀態變色，離線時一眼就看得到
+    var wrap = $('netDot').parentNode;
+    wrap.className = 'status-dot ' + (on ? 'is-online' : 'is-offline');
   }
 
   function renderUserCard() {
@@ -80,7 +83,10 @@ App.app = (function () {
       }
       App.camera.stop();
       App.auth.clear();
-      App.auth.showLogin('已登出');
+      // 清掉確認狀態：換人登入後，前一個人的照片不該被自動送出
+      App.queue.unconfirmAll().then(function () {
+        App.auth.showLogin('已登出');
+      });
     });
   }
 
