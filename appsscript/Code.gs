@@ -10,10 +10,22 @@
  *        SHEET_ID          試算表 ID
  *        DRIVE_FOLDER_ID   Drive 暫存資料夾 ID
  *        ADMIN_TOKEN       內部端點用的強 token（只給 PowerShell）
- *   3. 部署 → 新增部署作業 → 網頁應用程式
+ *        ACCESS_KEY        選用，見下方「固定存取參數 k」
+ *   3. 執行一次 setupSheets()，建立五個分頁並把密碼欄設為純文字格式。
+ *      不做這步，純數字密碼會被 Sheet 轉成數字、開頭的 0 消失，
+ *      症狀是「密碼明明對卻登不進去」。
+ *   4. 部署 → 新增部署作業 → 網頁應用程式
  *        執行身分：我       存取權：任何人
- *   4. 每次改完程式碼都要「管理部署作業 → 編輯 → 版本：新版本」，
+ *   5. 每次改完程式碼都要「管理部署作業 → 編輯 → 版本：新版本」，
  *      否則 /exec 仍跑舊碼（Apps Script 最常見的除錯陷阱）。
+ *
+ * 【固定存取參數 k（選用）】
+ *   設了指令碼屬性 ACCESS_KEY 後，PWA 端點就必須帶上相同的 k 才放行，
+ *   可擋掉「拿到網址就亂打」的掃描器。要設就兩邊都設、值必須一致：
+ *        Apps Script 指令碼屬性 ACCESS_KEY = 亂數（不含 ?k=）
+ *        Vercel 環境變數 APPS_SCRIPT_URL   = .../exec?k=同一組亂數
+ *   ⚠️ 只設這邊沒設 Vercel，會讓所有人登不進去；兩邊都不設則功能停用。
+ *   內部端點（updateTree/queue/download/ack）不受影響，PowerShell 不必改。
  *
  * 【跨域說明】
  *   PWA 佈署在 Vercel，屬跨域呼叫。Apps Script 不支援 OPTIONS preflight，
