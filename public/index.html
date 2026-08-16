@@ -8,8 +8,8 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="工地拍照">
-<title>工地拍照上傳</title>
+<meta name="apple-mobile-web-app-title" content="現場拍照">
+<title>現場拍照上傳</title>
 <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
@@ -17,7 +17,7 @@
 <!-- ================= 登入 ================= -->
 <div id="loginView">
   <div class="login-box">
-    <h2>工地拍照上傳</h2>
+    <h2>現場拍照上傳</h2>
     <div class="sub">請以現場帳號登入</div>
     <div class="login-err" id="loginErr"></div>
     <div class="field">
@@ -37,7 +37,7 @@
 
 <!-- ================= 主畫面 ================= -->
 <header>
-  <h1>工地拍照上傳</h1>
+  <h1>現場拍照上傳</h1>
   <span class="status-dot"><span class="dot" id="netDot"></span><span id="netText">檢查中</span></span>
 </header>
 
@@ -68,10 +68,22 @@
         <span class="sub">點這裡選擇</span>
       </button>
     </div>
+    <!-- 三欄配置：左（選目錄）／中（快門）／右（相機控制）。
+         用 grid 而非 flex 置中，右欄按鈕數量變動時快門才不會跟著偏移。 -->
     <div class="cam-controls">
-      <button class="icon-btn" id="switchBtn" title="切換鏡頭" style="display:none">🔄</button>
+      <div class="ctl-side left">
+        <button class="icon-btn" id="pickDirBtn" title="選擇上傳目錄">📁</button>
+      </div>
       <button class="shutter" id="shutterBtn" disabled></button>
-      <button class="icon-btn" id="startCamBtn" title="開啟相機">📷</button>
+      <div class="ctl-side right">
+        <button class="icon-btn" id="switchBtn" title="切換鏡頭" style="display:none">🔄</button>
+        <button class="icon-btn" id="startCamBtn" title="開啟相機">📷</button>
+      </div>
+    </div>
+    <!-- 待送出提示條：拍完不自動上傳，要按這裡才送（避免拍到一半就佔用網路） -->
+    <div class="send-bar" id="sendBar" style="display:none">
+      <span class="send-info" id="sendInfo">—</span>
+      <button class="btn btn-primary send-btn" id="sendNowBtn">傳送</button>
     </div>
   </section>
 
@@ -144,6 +156,26 @@
       <span class="spacer"></span>
       <button class="mini-btn" id="refreshTreeBtn">重新整理</button>
     </div>
+  </div>
+</div>
+
+<!-- 佇列照片放大檢視：確認拍得清不清楚，不清楚就刪掉重拍 -->
+<div class="viewer" id="viewer" style="display:none">
+  <div class="viewer-top">
+    <span class="viewer-path" id="viewerPath">—</span>
+    <button class="sheet-close" id="viewerCloseBtn" aria-label="關閉">✕</button>
+  </div>
+  <div class="viewer-stage" id="viewerStage">
+    <img id="viewerImg" alt="">
+  </div>
+  <div class="viewer-bottom">
+    <button class="icon-btn" id="viewerPrevBtn" title="上一張">‹</button>
+    <div class="viewer-meta">
+      <div id="viewerTime">—</div>
+      <div class="sub" id="viewerInfo">—</div>
+    </div>
+    <button class="icon-btn" id="viewerNextBtn" title="下一張">›</button>
+    <button class="btn btn-danger viewer-del" id="viewerDelBtn">刪除</button>
   </div>
 </div>
 

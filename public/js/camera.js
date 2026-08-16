@@ -95,9 +95,10 @@ App.camera = (function () {
         var parts = target.split('/');
         var shown = parts.length > 2 ? '…/' + parts.slice(-2).join('/') : target;
         toast('已存至 ' + shown + ' · ' + App.util.fmtSize(blob.size));
+        // 【不自動上傳】拍完只入佇列，等使用者確認完按「傳送」才送。
+        // 原本拍一張就送一張，會在連拍時邊拍邊佔網路，
+        // 也讓「拍錯想刪掉重拍」變得來不及——照片早就上雲端了。
         App.queue.refreshBadge();
-        // 立即嘗試送出（失敗會留在佇列，由重送機制處理）
-        App.queue.flush(true);
       }).catch(function (e) {
         toast('儲存失敗：' + e.message);
       });

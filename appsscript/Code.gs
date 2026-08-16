@@ -1,5 +1,5 @@
 /**
- * 工地拍照上傳系統 — Apps Script Web App
+ * 現場拍照上傳系統 — Apps Script Web App
  * =====================================================================
  * 單一端點對外，PWA 與內部 PowerShell 都呼叫這支 /exec。
  *
@@ -321,7 +321,7 @@ function inSubtree(child, root) {
  * 但 TREE 分頁存的是完整路徑（「專案A/區域1」），故上傳時必須先還原。
  *
  * 若前端送來的已是完整路徑（已含 rootPath 前綴）則原樣採用——這不會形成越權
- * 破口，因為呼叫端隨後仍會用 inSubtree 檢查；跨工地的完整路徑會在那裡被擋下。
+ * 破口，因為呼叫端隨後仍會用 inSubtree 檢查；跨現場的完整路徑會在那裡被擋下。
  */
 function resolveUserPath(relPath, root) {
   if (root === '') return relPath;
@@ -527,9 +527,9 @@ function actionUpload(body, token) {
 
   targetPath = resolveUserPath(relPath, user.rootPath);
 
-  // 防護一：必須落在該使用者子樹內（越權跨工地上傳的實際擋點）
+  // 防護一：必須落在該使用者子樹內（越權跨現場上傳的實際擋點）
   // 相對路徑經 resolveUserPath 後必然落在子樹內，但若前端誤送完整路徑，
-  // 這道檢查仍會擋下跨工地的越權嘗試。
+  // 這道檢查仍會擋下跨現場的越權嘗試。
   if (!inSubtree(targetPath, user.rootPath)) {
     logEvent('UPLOAD_DENY', user.username + ' → ' + targetPath + '（越權）');
     return json({ ok: false, error: 'FORBIDDEN_PATH', message: '無權上傳到此目錄' });

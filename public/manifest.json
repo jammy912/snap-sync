@@ -1,6 +1,6 @@
 {
-  "name": "工地拍照上傳",
-  "short_name": "工地拍照",
+  "name": "現場拍照上傳",
+  "short_name": "現場拍照",
   "description": "現場拍照後自動歸檔回內部指定目錄，支援離線暫存與自動重送。",
   "start_url": "./index.html",
   "scope": "./",

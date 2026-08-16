@@ -1,4 +1,4 @@
-/* 工地拍照上傳系統 — Service Worker
+/* 現場拍照上傳系統 — Service Worker
  * 沿用 sample CAP/sw.js 的 stale-while-revalidate 策略，快取清單改為拆檔後的資源。
  *
  * 重點：只處理同源 GET。對 Apps Script 的跨域請求（登入／目錄／上傳）
@@ -7,7 +7,7 @@
  * 改版時務必更新 CACHE 版本號，否則使用者會卡在舊版前端。
  */
 
-const CACHE = 'snapsync-shell-v4';
+const CACHE = 'snapsync-shell-v5';
 const ASSETS = [
   './',
   './index.html',

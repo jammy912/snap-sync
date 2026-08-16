@@ -21,8 +21,35 @@ App.tree = (function () {
   var flat = [];          // [{path, parent, name}]
   var selected = null;    // 目前選定的相對路徑
   var expanded = {};      // { path: true }
+  var counts = {};        // { path: 待上傳張數 }，含下層加總
 
   function selectedPath() { return selected; }
+
+  /* ---------- 待上傳張數 ---------- */
+
+  /**
+   * 從佇列統計每個目錄的待上傳張數。
+   *
+   * 張數會【往上層累加】：拍在「專案A/3F/牆面」的照片，
+   * 在收合狀態下的「專案A」也要看得到，否則收起來就等於看不見。
+   * render() 是同步的（被多處呼叫），所以這裡先算好存進 counts 快取。
+   */
+  function refreshCounts() {
+    return App.db.all().then(function (recs) {
+      var map = {};
+      recs.forEach(function (r) {
+        var p = r.targetPath;
+        if (!p) return;
+        var parts = String(p).split('/');
+        var acc = '';
+        for (var i = 0; i < parts.length; i++) {
+          acc = acc ? acc + '/' + parts[i] : parts[i];
+          map[acc] = (map[acc] || 0) + 1;
+        }
+      });
+      counts = map;
+    }).catch(function () { /* 統計失敗不該讓目錄樹開不起來 */ });
+  }
 
   /* ---------- 最近使用的目錄 ---------- */
 
@@ -96,8 +123,12 @@ App.tree = (function () {
   function openSheet() {
     $('treeSheet').style.display = 'flex';
     expandTo(selected);
+    // 先用既有快取畫出來（浮層要立刻有東西），張數算完再重畫一次
     render();
     renderRecent();
+    refreshCounts().then(function () {
+      if (isSheetOpen()) render();
+    });
   }
 
   function closeSheet() {
@@ -165,6 +196,17 @@ App.tree = (function () {
 
           row.appendChild(toggle);
           row.appendChild(name);
+
+          // 有待上傳照片才顯示，沒有就完全不佔位置
+          var n = counts[node.path] || 0;
+          if (n > 0) {
+            var cnt = document.createElement('span');
+            cnt.className = 'tree-count';
+            cnt.textContent = '(' + n + ')';
+            cnt.title = n + ' 張待上傳（含子目錄）';
+            row.appendChild(cnt);
+          }
+
           row.onclick = function () { choose(node.path); };
 
           wrap.appendChild(row);
@@ -246,6 +288,7 @@ App.tree = (function () {
     };
     $('targetBar').onclick = openSheet;
     $('needTarget').onclick = openSheet;
+    $('pickDirBtn').onclick = openSheet;      // 相機控制列最左邊的資料夾鍵
     $('closeSheetBtn').onclick = closeSheet;
 
     // 點浮層外的暗色區域關閉；點面板內不關
@@ -263,6 +306,7 @@ App.tree = (function () {
   return {
     init: init, refresh: refresh, loadCache: loadCache,
     selectedPath: selectedPath, setSelected: setSelected, render: render,
-    openSheet: openSheet, closeSheet: closeSheet, renderRecent: renderRecent
+    openSheet: openSheet, closeSheet: closeSheet, renderRecent: renderRecent,
+    refreshCounts: refreshCounts, isSheetOpen: isSheetOpen
   };
 })();

@@ -67,7 +67,9 @@ App.app = (function () {
     }).then(function () {
       return App.queue.refreshBadge();
     }).then(function () {
-      return App.queue.flush(true);       // 補送上次未送出的照片
+      // 沒按過「傳送」的照片不會自動送（拍到一半、還沒檢查的不該偷跑）；
+      // 但上次已按過傳送、只是沒送完的，開 App 就接著送完。
+      return App.queue.resumeAutoRetry();
     });
   }
 
