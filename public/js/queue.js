@@ -50,6 +50,19 @@ App.queue = (function () {
   }
 
   /**
+   * 每送完一張就更新畫面。
+   *
+   * 不能只在整批結束後更新——一次傳 9 張時，計數會整整卡住不動，
+   * 使用者看不出到底有沒有在動（實際回報過的狀況）。
+   * 佇列分頁沒開著時只更新數字徽章，省下重繪縮圖的成本。
+   */
+  function tick() {
+    return refreshBadge().then(function () {
+      if ($('queueView').classList.contains('active')) return render();
+    }).catch(function () { /* 畫面更新失敗不該中斷上傳 */ });
+  }
+
+  /**
    * 送出所有待上傳照片。
    * @param {boolean} silent 靜默模式（拍照後自動觸發時不洗版）
    */
@@ -78,6 +91,7 @@ App.queue = (function () {
           if (authFailed) return;
           return uploadOne(rec).then(function () {
             ok++;
+            return tick();           // 這張已送出，立刻讓計數往下跳
           }).catch(function (err) {
             if (App.auth.isAuthError(err)) {
               // 憑證失效：停止本輪，保留所有照片
@@ -89,7 +103,7 @@ App.queue = (function () {
             rec.retryCount = (rec.retryCount || 0) + 1;
             rec.lastError = err.message || String(err);
             rec.lastTryAt = Date.now();
-            return App.db.put(rec);
+            return App.db.put(rec).then(tick);   // 失敗徽章也要即時反映
           });
         });
       }, Promise.resolve());
@@ -97,9 +111,7 @@ App.queue = (function () {
       if (ok || fail) {
         if (!silent || fail) toast('上傳完成：成功 ' + ok + '、失敗 ' + fail);
       }
-      return refreshBadge();
-    }).then(function () {
-      if ($('queueView').classList.contains('active')) return render();
+      return tick();               // 收尾再更新一次（涵蓋整批都被退避跳過的情況）
     }).catch(function (err) {
       toast('上傳流程錯誤：' + err.message);
     }).finally(function () {
