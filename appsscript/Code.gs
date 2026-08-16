@@ -749,6 +749,55 @@ function setupSheets() {
   Logger.log('分頁建立完成：TREE / QUEUE / USERS / SESSIONS / LOG');
 }
 
+/**
+ * 診斷進階 Drive 服務是否可用（在編輯器手動執行，看「執行記錄」）。
+ *
+ * ack 回傳 driveDeleted:false 時跑這支，它會直接指出是哪一種問題：
+ * 服務沒啟用、識別碼取錯名字、還是版本不是 v3。
+ */
+function diagnoseDrive() {
+  var out = [];
+
+  if (typeof Drive === 'undefined') {
+    out.push('✗ Drive 未定義 → 進階服務沒啟用，或識別碼不叫 Drive。');
+    out.push('  修法：編輯器左側「服務」→ 新增 Drive API → 版本 v3 →');
+    out.push('       識別碼必須保持預設的 Drive。');
+    Logger.log(out.join('\n'));
+    return;
+  }
+  out.push('✓ Drive 物件存在');
+
+  if (!Drive.Files) {
+    out.push('✗ Drive.Files 不存在 → 版本可能不對，請選 v3。');
+    Logger.log(out.join('\n'));
+    return;
+  }
+  out.push('✓ Drive.Files 存在');
+  out.push(typeof Drive.Files.remove === 'function'
+    ? '✓ Drive.Files.remove 可呼叫（v3 正確）'
+    : '✗ Drive.Files.remove 不是函式 → 版本不是 v3，請改選 v3。');
+
+  // 實際建一個暫存檔再刪，這才是真正證明「刪得掉」
+  try {
+    var folder = DriveApp.getFolderById(prop('DRIVE_FOLDER_ID'));
+    var tmp = folder.createFile('__drive_selftest__.txt', 'selftest', MimeType.PLAIN_TEXT);
+    var tmpId = tmp.getId();
+    out.push('✓ 已在暫存夾建立測試檔 ' + tmpId);
+    try {
+      Drive.Files.remove(tmpId);
+      out.push('✓✓ 永久刪除成功 —— ack 的 driveDeleted 應該會是 true');
+    } catch (err) {
+      out.push('✗ 刪除失敗：' + err);
+      out.push('  測試檔 ' + tmpId + ' 仍在暫存夾，請手動刪除。');
+    }
+  } catch (err) {
+    out.push('✗ 無法存取暫存夾：' + err);
+    out.push('  請確認指令碼屬性 DRIVE_FOLDER_ID 正確。');
+  }
+
+  Logger.log(out.join('\n'));
+}
+
 /** 清理過期或已停用帳號的 session（可另設每日觸發器） */
 function cleanupSessions() {
   var users = readAll(SHEET_USERS, USERS_HEADERS);
