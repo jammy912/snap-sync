@@ -30,6 +30,21 @@ param(
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
 
+# 防止排程重疊：照片多時單輪可能跑超過排程間隔，
+# 兩份同時跑會抓到同一批 QUEUE 項目、寫入同一個檔名互相覆寫。
+$lock = Get-SnapSyncLock -Name 'SnapSync-SyncQueue' -LogFile $LogFile
+if (-not $lock) {
+    Write-Log -Message '上一輪尚未結束，本輪跳過（正常現象，不需處理）' -LogFile $LogFile
+    # 記為 Skipped 而非 Failed——這是防呆生效，不是錯誤。
+    # 但若持續出現，代表單輪處理時間已超過排程間隔，應拉長間隔或調小 -MaxItems。
+    try {
+        Add-DailySummary -SummaryFile $SummaryFile `
+            -Stats @{ Runs = 1; Skipped = 1 } `
+            -Notes '上一輪未結束，本輪跳過'
+    } catch { }
+    exit 0
+}
+
 try {
     $cfg = Get-SnapSyncConfig -ConfigPath $ConfigPath
 
@@ -165,4 +180,9 @@ catch {
             -Notes ("整輪中斷：{0}" -f $_.Exception.Message)
     } catch { }
     exit 1
+}
+finally {
+    # exit 會直接結束 process，作業系統本來就會釋放 Mutex；
+    # 這裡明確釋放是為了讓「同一個 PowerShell 工作階段連續手動執行兩次」也正常。
+    Release-SnapSyncLock -Lock $lock
 }

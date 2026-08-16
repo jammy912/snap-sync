@@ -207,6 +207,12 @@ cd C:\ASVT\SourceCode\AI\snap-sync\powershell
 工作排程器建兩個觸發器，**每 10 分鐘、錯開起始時間**（例如整點與整點過 5 分），
 降低同時打端點：
 
+> **縮短間隔（例如 5 分鐘）是安全的**：兩支腳本都有單一執行個體鎖，
+> 上一輪還沒跑完時下一輪會直接跳過並記錄，不會重疊執行。
+> log 出現 `上一輪尚未結束，本輪跳過` 是**防呆生效，不是錯誤**；
+> 但若持續每輪都跳過，代表單輪處理時間已超過排程間隔，
+> 應拉長間隔或調小 `Sync-Queue.ps1` 的 `-MaxItems`。
+
 ```
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\ASVT\SourceCode\AI\snap-sync\powershell\Push-Tree.ps1"
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\ASVT\SourceCode\AI\snap-sync\powershell\Sync-Queue.ps1"
@@ -284,6 +290,8 @@ PowerShell 端**不需要**帶 `k`，內部端點靠 `ADMIN_TOKEN` 把關。
 | 照片沒落地 | `powershell/logs/sync-queue.log`；QUEUE 列還在代表沒 ack（正常保護） |
 | Drive 一直長大 | `ack` 的 `driveDeleted` 是否為 `false` → 執行 `diagnoseDrive()` |
 | 排程有沒有在跑 | `powershell/logs/daily-sync-queue.csv` 的 `Runs` 欄（含空跑也會累加） |
+| log 一直說「上一輪尚未結束」 | 防呆正常運作；但持續發生代表單輪超過排程間隔，拉長間隔或調小 `-MaxItems` |
+| 掃描停住沒反應 | 每 200 筆會回報進度；若無輸出請確認 `Roots` 沒指到整顆磁碟或原始碼目錄 |
 | 前端報「端點未設定」 | Vercel 的 `APPS_SCRIPT_URL` 沒設或沒重新部署 |
 | 手機還是舊版畫面 | `sw.js` 的 `CACHE` 版本號沒加；手機**完全關掉 PWA 再開** |
 | 佇列數字一直不動 | 已修（`queue.js` 的 `tick()`）；若復發先確認手機拿到的是新版前端 |

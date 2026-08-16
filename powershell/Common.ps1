@@ -158,6 +158,75 @@ function Write-Log {
 }
 
 # =====================================================================
+# 單一執行個體鎖（防止排程重疊執行）
+#
+# 排程間隔縮短（例如 5 分鐘）時，上一輪可能還沒跑完下一輪就啟動。
+# 重疊執行的後果：
+#   Sync-Queue  兩個 process 抓到同一批 QUEUE 項目，同時寫入相同檔名，
+#               互相覆寫到一半的 .part 檔，甚至一邊還在下載一邊被另一邊 ack。
+#   Push-Tree   兩份掃描結果互相覆寫 TREE，短暫出現不完整的目錄樹。
+#
+# 用具名 Mutex 而非 lock 檔：process 被強制結束（工作排程器逾時、當機）時
+# 作業系統會自動釋放 Mutex，不會留下永久卡住的殘留鎖檔。
+# =====================================================================
+
+<#
+.SYNOPSIS
+  取得單一執行個體鎖；若同名作業已在執行則回傳 $null。
+
+.PARAMETER Name
+  作業名稱，同名才會互斥。例如 'SnapSync-SyncQueue'。
+
+.EXAMPLE
+  $lock = Get-SnapSyncLock -Name 'SnapSync-SyncQueue' -LogFile $LogFile
+  if (-not $lock) { exit 0 }
+  try { ... } finally { Release-SnapSyncLock -Lock $lock }
+#>
+function Get-SnapSyncLock {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string] $Name,
+        [string] $LogFile
+    )
+
+    # Global\ 前綴讓不同登入工作階段（互動登入 vs 排程服務）也能互斥，
+    # 否則你手動執行時擋不住背景排程那一份。
+    $mutex = New-Object Threading.Mutex($false, "Global\$Name")
+
+    try {
+        # 逾時 0 = 拿不到就立刻放棄，不排隊等待。
+        # 排隊沒有意義：下一輪 5 分鐘後本來就會再跑。
+        $acquired = $mutex.WaitOne(0)
+    }
+    catch [Threading.AbandonedMutexException] {
+        # 前一個持有者沒正常釋放就結束（當機／被 kill）。
+        # 這種情況下鎖仍算取得成功，但值得記錄——可能代表上一輪異常中止。
+        Write-Log -Message '偵測到前一輪未正常結束（鎖被遺棄），本輪繼續執行' `
+            -Level 'WARN' -LogFile $LogFile
+        $acquired = $true
+    }
+
+    if (-not $acquired) {
+        $mutex.Dispose()
+        return $null
+    }
+    return $mutex
+}
+
+<#
+.SYNOPSIS
+  釋放 Get-SnapSyncLock 取得的鎖。務必放在 finally 區塊。
+#>
+function Release-SnapSyncLock {
+    [CmdletBinding()]
+    param([Threading.Mutex] $Lock)
+
+    if (-not $Lock) { return }
+    try { $Lock.ReleaseMutex() } catch { }
+    $Lock.Dispose()
+}
+
+# =====================================================================
 # 每日彙總記錄
 #
 # 每輪排程執行完都累加當日統計，寫成一行一天的 daily-*.csv，

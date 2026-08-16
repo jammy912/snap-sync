@@ -40,6 +40,19 @@ param(
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
 
+# 防止排程重疊：目錄很多時掃描可能跑超過排程間隔，
+# 兩份同時跑會用各自的掃描結果互相覆寫 TREE（updateTree 是覆寫語意）。
+$lock = Get-SnapSyncLock -Name 'SnapSync-PushTree' -LogFile $LogFile
+if (-not $lock) {
+    Write-Log -Message '上一輪尚未結束，本輪跳過（正常現象，不需處理）' -LogFile $LogFile
+    try {
+        Add-DailySummary -SummaryFile $SummaryFile `
+            -Stats @{ Runs = 1; Skipped = 1; Failed = 0 } `
+            -Notes '上一輪未結束，本輪跳過'
+    } catch { }
+    exit 0
+}
+
 try {
     $cfg = Get-SnapSyncConfig -ConfigPath $ConfigPath
     $items = New-Object System.Collections.Generic.List[object]
@@ -155,4 +168,7 @@ catch {
             -Notes ("失敗：{0}" -f $_.Exception.Message)
     } catch { }
     exit 1
+}
+finally {
+    Release-SnapSyncLock -Lock $lock
 }
