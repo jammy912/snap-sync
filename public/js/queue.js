@@ -188,10 +188,16 @@ App.queue = (function () {
               return;
             }
             fail++;
+            // 只寫回重試欄位，絕不整筆 put——那會連 blob 一起寫回去，
+            // 在 iOS 上會讓失敗的那張變破圖（見 db.patch 的說明）。
             rec.retryCount = (rec.retryCount || 0) + 1;
             rec.lastError = err.message || String(err);
             rec.lastTryAt = Date.now();
-            return App.db.put(rec).then(tick);   // 失敗徽章也要即時反映
+            return App.db.patch(rec.id, {
+              retryCount: rec.retryCount,
+              lastError: rec.lastError,
+              lastTryAt: rec.lastTryAt
+            }).then(tick);                       // 失敗徽章也要即時反映
           });
         });
       }, Promise.resolve());
@@ -235,8 +241,16 @@ App.queue = (function () {
       var totalSize = 0;
       recs.forEach(function (r) {
         totalSize += r.size || 0;
-        var url = URL.createObjectURL(r.blob);
-        objectURLs.push(url);
+        // r.blob 可能不是有效的 Blob（舊版寫壞的記錄）。
+        // createObjectURL 會直接丟例外，不擋的話整個 forEach 中斷，
+        // 後面所有照片都不會被畫出來——一張壞的害整頁空白。
+        var url = null;
+        try {
+          if (r.blob instanceof Blob) {
+            url = URL.createObjectURL(r.blob);
+            objectURLs.push(url);
+          }
+        } catch (e) { url = null; }
 
         var div = document.createElement('div');
         div.className = 'thumb';
@@ -245,8 +259,26 @@ App.queue = (function () {
         var badgeTxt = r.retryCount > 0 ? '!' + r.retryCount : '⤴';
 
         var img = document.createElement('img');
-        img.src = url;
         img.alt = '';
+        if (url) {
+          img.src = url;
+          // blob 讀不到時，顯示明確訊息而不是瀏覽器的破圖圖示——
+          // 現場看到「?」方塊只會困惑，不知道照片還在不在。
+          img.onerror = function () {
+            div.classList.add('broken');
+            img.remove();
+            var w = document.createElement('div');
+            w.className = 'thumb-broken';
+            w.textContent = '預覽讀取失敗';
+            div.insertBefore(w, div.firstChild);
+          };
+        } else {
+          div.classList.add('broken');
+          var w0 = document.createElement('div');
+          w0.className = 'thumb-broken';
+          w0.textContent = '照片資料遺失';
+          div.appendChild(w0);
+        }
 
         var badge = document.createElement('div');
         badge.className = 'up-badge ' + badgeCls;
@@ -297,11 +329,17 @@ App.queue = (function () {
         return showAt(Math.min(idx, viewList.length - 1));
       }
       releaseViewURL();
-      viewURL = URL.createObjectURL(r.blob);
 
       var img = $('viewerImg');
       img.classList.remove('zoomed');      // 換張時回到適應畫面
-      img.src = viewURL;
+      if (r.blob instanceof Blob) {
+        viewURL = URL.createObjectURL(r.blob);
+        img.src = viewURL;
+      } else {
+        // 讀不到內容也要能開，使用者才看得到是哪一筆壞掉並刪除它
+        img.removeAttribute('src');
+        toast('這張照片的影像資料讀取不到');
+      }
 
       $('viewerPath').textContent = r.targetPath || '—';
       $('viewerTime').textContent = App.util.fmtTime(r.capturedAt)

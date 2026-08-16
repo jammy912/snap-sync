@@ -71,6 +71,33 @@ App.db = (function () {
     });
   }
 
+  /**
+   * 只更新重試狀態，【不碰 blob】。
+   *
+   * ⚠️ 不可用 put(rec) 寫回上傳失敗的那筆記錄。
+   * rec 是 getAll() 取出的複本，其 blob 經 FileReader 讀過之後再 put 回去，
+   * iOS Safari 會存進一個已失效的 blob 參照——之後 createObjectURL 產生的
+   * 網址讀不到內容，縮圖就變成破圖（實測：只有上傳失敗過的那張會破）。
+   *
+   * 這裡改成在同一個 transaction 內重讀原始記錄、只覆寫欄位再寫回，
+   * 原本存在 IndexedDB 裡的 blob 完全不動。
+   */
+  function patch(id, fields) {
+    return new Promise(function (res, rej) {
+      var t = db.transaction(STORE_PHOTOS, 'readwrite');
+      var store = t.objectStore(STORE_PHOTOS);
+      var req = store.get(id);
+      req.onsuccess = function () {
+        var cur = req.result;
+        if (!cur) { res(false); return; }        // 已被刪除，不重建
+        Object.keys(fields).forEach(function (k) { cur[k] = fields[k]; });
+        store.put(cur);
+      };
+      t.oncomplete = function () { res(true); };
+      t.onerror = function (e) { rej(e.target.error); };
+    });
+  }
+
   function remove(id) {
     return new Promise(function (res, rej) {
       var t = db.transaction(STORE_PHOTOS, 'readwrite');
@@ -98,7 +125,7 @@ App.db = (function () {
   }
 
   return {
-    open: open, add: add, put: put, all: all, get: get, remove: remove,
+    open: open, add: add, put: put, patch: patch, all: all, get: get, remove: remove,
     setMeta: setMeta, getMeta: getMeta
   };
 })();

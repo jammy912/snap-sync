@@ -7,7 +7,7 @@
  * 改版時務必更新 CACHE 版本號，否則使用者會卡在舊版前端。
  */
 
-const CACHE = 'snapsync-shell-v5';
+const CACHE = 'snapsync-shell-v6';
 const ASSETS = [
   './',
   './index.html',
