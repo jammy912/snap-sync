@@ -85,7 +85,14 @@ function Get-SnapSyncConfig {
         if ($name -match '[\\/]') {
             throw "根名稱不可包含斜線：$name"
         }
-        $resolved[$name] = (Resolve-Path -LiteralPath $dir).Path.TrimEnd('\')
+        # ⚠️ 必須用 .ProviderPath 而非 .Path。
+        # UNC 路徑經 Resolve-Path 後，.Path 會帶上 PowerShell 的 provider 前綴：
+        #   .Path         = Microsoft.PowerShell.Core\FileSystem::\\host\share\dir
+        #   .ProviderPath = \\host\share\dir
+        # Get-ChildItem 兩種都吃得下，但子項目的 FullName 一律是無前綴的真實路徑，
+        # 拿帶前綴的長度去 Substring 算相對路徑會直接越界，掃描在第一個目錄就中斷
+        # （實測症狀：UNC 根「0 秒掃完、納入 0 個目錄」）。
+        $resolved[$name] = (Resolve-Path -LiteralPath $dir).ProviderPath.TrimEnd('\')
     }
 
     return [pscustomobject]@{
