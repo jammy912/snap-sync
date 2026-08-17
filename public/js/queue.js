@@ -163,9 +163,18 @@ App.queue = (function () {
     // 手動按傳送：先把「目前佇列裡的照片」逐筆標記為已確認。
     // 標記完才開始送，因此標記之後才拍的照片不在這一批裡，
     // 必須等這批送完、使用者再按一次傳送才會送出。
+    //
+    // ★ batchIds 記下這一批到底是哪幾筆，送出時只認這份名單。
+    //   不可以在標記完之後重新 App.db.all() 再篩 confirmed——
+    //   逐筆 patch 是 N 個獨立 transaction，每筆之間都會交還事件迴圈，
+    //   使用者此時按快門，新照片就可能擠進重讀的結果裡被一起送出。
+    //   實測症狀：整批傳完後拍的第一張會自己送出，第二張之後才正常等確認。
+    var batchIds = null;
     var prepare = manual
       ? App.db.all().then(function (recs) {
           var todo = pendingOf(recs).filter(function (r) { return !isConfirmed(r); });
+          batchIds = {};
+          pendingOf(recs).forEach(function (r) { batchIds[r.id] = true; });
           return todo.reduce(function (chain, r) {
             return chain.then(function () { return App.db.patch(r.id, { confirmed: true }); });
           }, Promise.resolve());
@@ -182,6 +191,8 @@ App.queue = (function () {
       if (!recs) return;
 
       var pending = pendingOf(recs).filter(function (r) {
+        // 手動送出時只認 prepare 當下的那份名單，之後新拍的一律不送
+        if (batchIds && !batchIds[r.id]) return false;
         // 【只送已確認的】未確認＝使用者還沒按傳送檢查過，一律不送
         if (!isConfirmed(r)) return false;
         // 手動按傳送時不理會退避——使用者要的就是「現在送」
