@@ -35,6 +35,10 @@ header {
 }
 /* 狀態列放大後，標題在窄螢幕上要讓位，不能把狀態擠掉 */
 header h1 { font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+/* 版本號：現場回報問題時要能一眼確認手機上跑的是哪一版前端。
+   PWA 會快取前端資源，「已部署」不等於「使用者拿到了」。
+   刻意壓小、用次要色，不跟標題搶注意力。 */
+.ver { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 6px; }
 /* 連線狀態：現場戴手套、隔著距離也要一眼看到斷線，所以字和點都放大 */
 .status-dot { display: inline-flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 600; color: var(--muted); flex-shrink: 0; margin-left: 12px; }
 .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }

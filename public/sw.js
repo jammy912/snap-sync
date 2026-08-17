@@ -7,7 +7,9 @@
  * 改版時務必更新 CACHE 版本號，否則使用者會卡在舊版前端。
  */
 
-const CACHE = 'snapsync-shell-v7';
+// ⚠️ 這個版本號同時是畫面右上角顯示的版本（app.js 從 SW 取得後寫進標題）。
+// 改版時務必遞增，否則使用者會卡在舊版前端，而且看不出手機上跑的是哪一版。
+const CACHE = 'snapsync-shell-v8';
 const ASSETS = [
   './',
   './index.html',
