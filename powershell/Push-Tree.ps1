@@ -53,14 +53,40 @@ param(
     # 也可能十幾分鐘不吭聲，讓人分不清是在跑還是卡死。
     [int] $ProgressSeconds = 15,
 
-    [string] $LogFile = (Join-Path $PSScriptRoot 'logs\push-tree.log'),
+    # ⚠️ 以下路徑參數的預設值不可寫成 (Join-Path $PSScriptRoot ...)。
+    #    在 [CmdletBinding()] 的 param 區塊裡，$PSScriptRoot 求值時是空字串，
+    #    Join-Path 會直接拋「Cannot bind argument to parameter 'Path'」而中止，
+    #    連 log 都寫不出來（實測：不傳該參數時必炸）。
+    #    因此一律留空，改在下方 body 內補上預設值——那裡 $PSScriptRoot 才有值。
+    [string] $LogFile,
+
+    # 上一輪的掃描結果快照，用來比對本輪有沒有變動（決定要不要寄通知信）。
+    # 存的是目錄清單與標記檔位置，不含照片內容，檔案很小。
+    [string] $SnapshotFile,
+
+    # 加上這個參數就不寄信（排查問題時避免洗版收件匣）
+    [switch] $NoMail,
+
+    # 失敗告警的抑制記錄：記下上次為哪個錯誤寄過信、何時寄的
+    [string] $AlertStateFile,
+
+    # 同一個錯誤在這麼多小時內只告警一次。
+    # 排程 10 分鐘一輪，斷線這類問題會持續數天，每輪都寄等於一天 144 封。
+    [int] $AlertQuietHours = 6,
 
     # 每日彙總（一天一列，可直接用 Excel 開）
-    [string] $SummaryFile = (Join-Path $PSScriptRoot 'logs\daily-push-tree.csv'),
+    [string] $SummaryFile,
 
     # 設定檔路徑（預設同目錄的 config.json）
-    [string] $ConfigPath = (Join-Path $PSScriptRoot 'config.json')
+    [string] $ConfigPath
 )
+
+# 補上路徑類參數的預設值（見上方 param 區塊的說明：那裡不能用 $PSScriptRoot）
+if (-not $LogFile)        { $LogFile        = Join-Path $PSScriptRoot 'logs\push-tree.log' }
+if (-not $SnapshotFile)   { $SnapshotFile   = Join-Path $PSScriptRoot 'logs\tree-snapshot.json' }
+if (-not $AlertStateFile) { $AlertStateFile = Join-Path $PSScriptRoot 'logs\last-alert.json' }
+if (-not $SummaryFile)    { $SummaryFile    = Join-Path $PSScriptRoot 'logs\daily-push-tree.csv' }
+if (-not $ConfigPath)     { $ConfigPath     = Join-Path $PSScriptRoot 'config.json' }
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
 
@@ -90,6 +116,9 @@ try {
     # 會把整棵 TREE 清成空的，手機端就完全選不到目錄了。
     $okRoots = 0
     $failedRoots = @()
+
+    # 全部根的標記檔位置，寄通知信時列出
+    $allMarkers = New-Object System.Collections.Generic.List[string]
 
     foreach ($rootName in $cfg.Roots.Keys) {
         $rootFull = $cfg.Roots[$rootName]
@@ -124,6 +153,8 @@ try {
 
         $scanned = 0
         $markers = 0
+        # 標記檔位置清單，寄通知信時要一併列出，讓維護人員知道現在開通了哪些點
+        $markerPaths = New-Object System.Collections.Generic.List[string]
         $sw = [Diagnostics.Stopwatch]::StartNew()
         $rootOk = $false
         $lastErr = $null
@@ -143,6 +174,7 @@ try {
 
             $pending.Clear()
             $pendingSeen.Clear()
+            $markerPaths.Clear()
             $scanned = 0
             $markers = 0
             $sw.Restart()
@@ -201,6 +233,7 @@ try {
                         # 這個目錄有標記 → 它與底下所有子目錄都納入
                         if (Test-Path -LiteralPath (Join-Path $d.FullName $MarkerName)) {
                             $markers++
+                            $markerPaths.Add($(if ($rootName) { "$rootName/$relPath" } else { $relPath })) | Out-Null
                             Write-Log -Message ("    找到標記：{0}" -f $relPath) -LogFile $LogFile
 
                             & $addNode $relPath
@@ -257,6 +290,7 @@ try {
         foreach ($node in $pending) {
             if ($seen.Add([string]$node.path)) { $items.Add($node) | Out-Null }
         }
+        foreach ($mp in $markerPaths) { $allMarkers.Add($mp) | Out-Null }
 
         $okRoots++
         Write-Log -Message ("  {0}：找到 {1} 個標記、納入 {2} 個目錄（{3} 秒）" -f `
@@ -306,6 +340,95 @@ try {
 
     Write-Log -Message "推送完成：TREE 已更新 $($resp.count) 列（updatedAt=$($resp.updatedAt)）" -LogFile $LogFile
 
+    # ---- 與上一輪比對，有變動才寄通知信 ----
+    # 只在推送成功後才做：推失敗時 TREE 沒更新，寄「已變動」會誤導。
+    # 整段包在 try 裡——通知信失敗絕不能影響已經成功的推送結果。
+    try {
+        $curPaths = @($items | ForEach-Object { [string]$_.path })
+        $curMarkers = @($allMarkers)
+
+        $prev = Get-TreeSnapshot -Path $SnapshotFile
+        $isFirstRun = ($null -eq $prev)
+
+        if ($isFirstRun) {
+            # 第一次執行沒有比較基準，全部都算「新增」會寄出整棵樹，
+            # 對維護人員沒有意義。只建立基準，不寄信。
+            Write-Log -Message '首次建立目錄樹快照，本輪不寄通知信（下一輪起才比對變動）' -LogFile $LogFile
+        }
+        else {
+            $diff = Compare-TreeSnapshot -Before @($prev.paths) -After $curPaths
+            $mdiff = Compare-TreeSnapshot -Before @($prev.markers) -After $curMarkers
+
+            if (-not $diff.HasChange -and -not $mdiff.HasChange) {
+                Write-Log -Message '目錄樹與上一輪相同，不寄通知信' -LogFile $LogFile
+            }
+            elseif ($NoMail) {
+                Write-Log -Message ("目錄樹有變動（新增 {0}、消失 {1}），但指定了 -NoMail，不寄信" -f `
+                    $diff.Added.Count, $diff.Removed.Count) -LogFile $LogFile
+            }
+            elseif (-not $cfg.Mail) {
+                Write-Log -Message ("目錄樹有變動（新增 {0}、消失 {1}），但 config.json 未設定 Mail，不寄信" -f `
+                    $diff.Added.Count, $diff.Removed.Count) -Level 'WARN' -LogFile $LogFile
+            }
+            else {
+                Write-Log -Message ("目錄樹有變動：新增 {0} 個、消失 {1} 個，準備寄通知信" -f `
+                    $diff.Added.Count, $diff.Removed.Count) -LogFile $LogFile
+
+                $sb = New-Object Text.StringBuilder
+                [void]$sb.AppendLine("目錄樹已更新（$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')）")
+                [void]$sb.AppendLine()
+                [void]$sb.AppendLine("共 $($resp.count) 個目錄，$okRoots/$($cfg.Roots.Count) 個根掃描成功。")
+                if ($failedRoots.Count -gt 0) {
+                    [void]$sb.AppendLine("⚠️ 掃描失敗的根：$($failedRoots -join '、')")
+                    [void]$sb.AppendLine("   這些根的目錄本輪不在手機選單上，直到下一輪掃成功才會回來。")
+                }
+                [void]$sb.AppendLine()
+
+                [void]$sb.AppendLine('===== 變動摘要 =====')
+                if ($diff.Added.Count -gt 0) {
+                    [void]$sb.AppendLine("新增 $($diff.Added.Count) 個目錄：")
+                    foreach ($x in $diff.Added) { [void]$sb.AppendLine("  [+] $x") }
+                    [void]$sb.AppendLine()
+                }
+                if ($diff.Removed.Count -gt 0) {
+                    [void]$sb.AppendLine("消失 $($diff.Removed.Count) 個目錄：")
+                    foreach ($x in $diff.Removed) { [void]$sb.AppendLine("  [-] $x") }
+                    [void]$sb.AppendLine("  （目錄被移走或改名，也可能是 $MarkerName 標記檔被刪除）")
+                    [void]$sb.AppendLine()
+                }
+
+                [void]$sb.AppendLine("===== 標記檔（$MarkerName）位置 =====")
+                [void]$sb.AppendLine("共 $($curMarkers.Count) 個。只有放了標記檔的目錄（含其子目錄）會出現在手機選單。")
+                if ($mdiff.HasChange) {
+                    foreach ($x in $mdiff.Added)   { [void]$sb.AppendLine("  [+] $x") }
+                    foreach ($x in $mdiff.Removed) { [void]$sb.AppendLine("  [-] $x") }
+                }
+                foreach ($x in ($curMarkers | Sort-Object)) {
+                    if ($mdiff.Added -contains $x) { continue }   # 上面已列過
+                    [void]$sb.AppendLine("      $x")
+                }
+                [void]$sb.AppendLine()
+
+                [void]$sb.AppendLine('===== 完整目錄樹 =====')
+                [void]$sb.AppendLine('（[+] 本輪新增、[-] 本輪消失）')
+                [void]$sb.AppendLine()
+                [void]$sb.AppendLine((Format-TreeText -Paths $curPaths -Added $diff.Added -Removed $diff.Removed))
+
+                $subject = "[SnapSync] 目錄樹變動：新增 $($diff.Added.Count)、消失 $($diff.Removed.Count)"
+                Send-TreeChangeMail -MailConfig $cfg.Mail -Subject $subject `
+                    -Body $sb.ToString() -LogFile $LogFile | Out-Null
+            }
+        }
+
+        # 不論有沒有寄信都要更新快照，否則下一輪會重複偵測到同一批變動
+        Save-TreeSnapshot -Path $SnapshotFile -Paths $curPaths -Markers $curMarkers
+    }
+    catch {
+        # 通知信是附加功能，出錯不影響「目錄樹已推送成功」這個事實
+        Write-Log -Message ("變動比對／通知信處理失敗（不影響推送結果）：{0}" -f $_.Exception.Message) `
+            -Level 'WARN' -LogFile $LogFile
+    }
+
     $note = "最後推送 {0} 個目錄（{1}/{2} 個根成功）" -f $resp.count, $okRoots, $cfg.Roots.Count
     if ($failedRoots.Count -gt 0) { $note += "；失敗：$($failedRoots -join '、')" }
 
@@ -315,15 +438,87 @@ try {
     exit 0
 }
 catch {
-    Write-Log -Message "執行失敗：$($_.Exception.Message)" -Level 'ERROR' -LogFile $LogFile
+    $errMsg = $_.Exception.Message
+    Write-Log -Message "執行失敗：$errMsg" -Level 'ERROR' -LogFile $LogFile
     Write-Log -Message $_.ScriptStackTrace -Level 'ERROR' -LogFile $LogFile
 
     # 失敗也要進彙總，否則「今天沒推成功」在報表上看不出來
     try {
         Add-DailySummary -SummaryFile $SummaryFile `
             -Stats @{ Runs = 1; Skipped = 0; Failed = 1 } `
-            -Notes ("失敗：{0}" -f $_.Exception.Message)
+            -Notes ("失敗：{0}" -f $errMsg)
     } catch { }
+
+    # ---- 失敗告警信 ----
+    # ⚠️ 必須抑制重複：排程 10 分鐘一輪，網路磁碟機斷線這種問題會持續好幾天，
+    #    每輪都寄等於一天灌 144 封信，收件匣爆掉之後真正重要的信也會被忽略。
+    #    因此同一個錯誤在 $AlertQuietHours 小時內只寄一次。
+    try {
+        if (-not $NoMail) {
+            $mailCfg = $null
+            try { $mailCfg = (Get-SnapSyncConfig -ConfigPath $ConfigPath).Mail } catch { }
+
+            if ($mailCfg) {
+                # 以「錯誤訊息 + 上次寄送時間」判斷要不要再寄
+                $lastAlert = $null
+                if (Test-Path -LiteralPath $AlertStateFile) {
+                    try { $lastAlert = Get-Content -LiteralPath $AlertStateFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { }
+                }
+
+                $sameErr = $lastAlert -and ([string]$lastAlert.message -eq $errMsg)
+                $withinQuiet = $false
+                if ($sameErr -and $lastAlert.sentAt) {
+                    try {
+                        $withinQuiet = ((Get-Date) - [datetime]$lastAlert.sentAt).TotalHours -lt $AlertQuietHours
+                    } catch { }
+                }
+
+                if ($withinQuiet) {
+                    Write-Log -Message ("相同錯誤已於 {0} 告警過，{1} 小時內不重複寄信" -f `
+                        $lastAlert.sentAt, $AlertQuietHours) -LogFile $LogFile
+                }
+                else {
+                    $ab = New-Object Text.StringBuilder
+                    [void]$ab.AppendLine("Push-Tree 執行失敗（$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')）")
+                    [void]$ab.AppendLine()
+                    [void]$ab.AppendLine('錯誤訊息：')
+                    [void]$ab.AppendLine("  $errMsg")
+                    [void]$ab.AppendLine()
+                    [void]$ab.AppendLine("執行主機：$env:COMPUTERNAME")
+                    [void]$ab.AppendLine("執行身分：$env:USERDOMAIN\$env:USERNAME")
+                    [void]$ab.AppendLine("腳本路徑：$PSCommandPath")
+                    [void]$ab.AppendLine("記錄檔　：$LogFile")
+                    [void]$ab.AppendLine()
+                    [void]$ab.AppendLine('影響：')
+                    [void]$ab.AppendLine('  本輪未推送目錄樹，手機選單維持上一次成功的內容。')
+                    [void]$ab.AppendLine('  照片上傳不受影響，但新建立的目錄不會出現在選單上。')
+                    [void]$ab.AppendLine()
+                    [void]$ab.AppendLine('堆疊追蹤：')
+                    [void]$ab.AppendLine($_.ScriptStackTrace)
+                    [void]$ab.AppendLine()
+                    [void]$ab.AppendLine("※ 相同錯誤在 $AlertQuietHours 小時內不會重複寄信，排除後即恢復正常通知。")
+
+                    $sent = Send-TreeChangeMail -MailConfig $mailCfg `
+                        -Subject "[SnapSync] ⚠️ Push-Tree 執行失敗：$errMsg" `
+                        -Body $ab.ToString() -LogFile $LogFile
+
+                    if ($sent) {
+                        $dir = Split-Path -Parent $AlertStateFile
+                        if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+                            New-Item -ItemType Directory -Force -Path $dir | Out-Null
+                        }
+                        $state = [ordered]@{ message = $errMsg; sentAt = (Get-Date).ToString('o') }
+                        [IO.File]::WriteAllText($AlertStateFile,
+                            ($state | ConvertTo-Json), (New-Object Text.UTF8Encoding $false))
+                    }
+                }
+            }
+        }
+    } catch {
+        # 告警信本身失敗不能再拋例外，否則會蓋掉原始錯誤
+        Write-Log -Message ("告警信寄送失敗：{0}" -f $_.Exception.Message) -Level 'WARN' -LogFile $LogFile
+    }
+
     exit 1
 }
 finally {

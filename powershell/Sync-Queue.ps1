@@ -19,14 +19,21 @@ param(
     # 單輪最多處理幾筆，避免一次跑太久卡住排程
     [int] $MaxItems = 200,
 
-    [string] $LogFile = (Join-Path $PSScriptRoot 'logs\sync-queue.log'),
+    # ⚠️ 預設值不可寫成 (Join-Path $PSScriptRoot ...)：在 [CmdletBinding()] 的
+    #    param 區塊裡 $PSScriptRoot 是空字串，Join-Path 會直接拋錯而中止。
+    #    留空，改在下方 body 補上（見 Push-Tree.ps1 的相同處理）。
+    [string] $LogFile,
 
     # 每日彙總（一天一列，可直接用 Excel 開）
-    [string] $SummaryFile = (Join-Path $PSScriptRoot 'logs\daily-sync-queue.csv'),
+    [string] $SummaryFile,
 
     # 設定檔路徑（預設同目錄的 config.json）
-    [string] $ConfigPath = (Join-Path $PSScriptRoot 'config.json')
+    [string] $ConfigPath
 )
+
+if (-not $LogFile)     { $LogFile     = Join-Path $PSScriptRoot 'logs\sync-queue.log' }
+if (-not $SummaryFile) { $SummaryFile = Join-Path $PSScriptRoot 'logs\daily-sync-queue.csv' }
+if (-not $ConfigPath)  { $ConfigPath  = Join-Path $PSScriptRoot 'config.json' }
 
 . (Join-Path $PSScriptRoot 'Common.ps1')
 

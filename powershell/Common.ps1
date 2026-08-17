@@ -41,6 +41,7 @@ function Get-SnapSyncConfig {
     $endpoint = $env:SNAPSYNC_ENDPOINT
     $adminToken = $env:SNAPSYNC_TOKEN
     $roots = [ordered]@{}
+    $mail = $null
 
     # 環境變數只支援單一路徑（多路徑請用 config.json）
     if ($env:SNAPSYNC_ROOT) { $roots[''] = $env:SNAPSYNC_ROOT }
@@ -62,6 +63,9 @@ function Get-SnapSyncConfig {
             # 舊格式相容：單一路徑、不加根名稱前綴
             $roots = [ordered]@{ '' = $json.RootDir }
         }
+
+        # 郵件設定是選用的：沒設就不寄通知信，不影響目錄樹推送
+        if ($names -contains 'Mail' -and $json.Mail) { $mail = $json.Mail }
     }
 
     if (-not $endpoint) {
@@ -99,6 +103,7 @@ function Get-SnapSyncConfig {
         Endpoint   = $endpoint
         AdminToken = $adminToken
         Roots      = $resolved
+        Mail       = $mail
     }
 }
 
@@ -300,6 +305,273 @@ function Add-DailySummary {
     # 只保留最近 400 天，避免無限成長
     $rows = $rows | Sort-Object Date | Select-Object -Last 400
     $rows | Export-Csv -LiteralPath $SummaryFile -NoTypeInformation -Encoding UTF8
+}
+
+# =====================================================================
+# 目錄樹變動通知
+#
+# Push-Tree 每輪都會重掃並覆寫 TREE，但維護人員無從得知「今天多了哪個
+# 現場、哪個目錄被移走了」。這裡把每輪結果存成快照，與上一輪比對，
+# 有變動才寄信——排程 10 分鐘一輪，沒變動也寄會變成沒人看的騷擾信。
+# =====================================================================
+
+<#
+.SYNOPSIS
+  讀取上一輪的快照；不存在或損毀時回傳 $null（視為「沒有前一輪」）。
+#>
+function Get-TreeSnapshot {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string] $Path)
+
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
+    try {
+        $raw = Get-Content -LiteralPath $Path -Raw -Encoding UTF8
+        if (-not $raw) { return $null }
+        return $raw | ConvertFrom-Json
+    }
+    catch {
+        # 快照損毀不該中斷主流程：當成沒有前一輪，本輪重新建立
+        return $null
+    }
+}
+
+<#
+.SYNOPSIS
+  寫入本輪快照，供下一輪比對。
+
+.PARAMETER Paths
+  本輪納入 TREE 的所有相對路徑。
+
+.PARAMETER Markers
+  本輪找到的標記檔位置。
+#>
+function Save-TreeSnapshot {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string] $Path,
+        [string[]] $Paths = @(),
+        [string[]] $Markers = @()
+    )
+
+    $dir = Split-Path -Parent $Path
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) {
+        New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    }
+
+    $obj = [ordered]@{
+        updatedAt = (Get-Date).ToString('o')
+        paths     = @($Paths | Sort-Object)
+        markers   = @($Markers | Sort-Object)
+    }
+    # 用 WriteAllText 而非 Out-File：確保是不帶 BOM 的 UTF-8，
+    # ConvertFrom-Json 讀回時才不會在開頭吃到 BOM 字元而解析失敗。
+    [IO.File]::WriteAllText($Path, ($obj | ConvertTo-Json -Depth 5), (New-Object Text.UTF8Encoding $false))
+}
+
+<#
+.SYNOPSIS
+  比對前後兩輪的路徑清單，回傳新增與消失的項目。
+
+.OUTPUTS
+  PSCustomObject：Added / Removed / HasChange
+#>
+function Compare-TreeSnapshot {
+    [CmdletBinding()]
+    param(
+        [string[]] $Before = @(),
+        [string[]] $After = @()
+    )
+
+    $b = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($x in $Before) { if ($x) { $b.Add($x) | Out-Null } }
+    $a = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($x in $After) { if ($x) { $a.Add($x) | Out-Null } }
+
+    $added = @($After | Where-Object { $_ -and -not $b.Contains($_) } | Sort-Object)
+    $removed = @($Before | Where-Object { $_ -and -not $a.Contains($_) } | Sort-Object)
+
+    return [pscustomobject]@{
+        Added     = $added
+        Removed   = $removed
+        HasChange = (($added.Count + $removed.Count) -gt 0)
+    }
+}
+
+<#
+.SYNOPSIS
+  把扁平的路徑清單畫成樹狀圖，變動處以標記標示。
+
+.DESCRIPTION
+  用 ├─ └─ │ 畫出層級。新增的目錄標 [+]、消失的標 [-]。
+  消失的目錄不在 Paths 裡（本輪已經沒有了），所以要另外併進來，
+  否則維護人員看不到「什麼不見了」——那往往才是需要追查的事。
+
+.PARAMETER Paths
+  本輪的完整路徑清單（相對路徑，以 / 分隔）。
+#>
+function Format-TreeText {
+    [CmdletBinding()]
+    param(
+        [string[]] $Paths = @(),
+        [string[]] $Added = @(),
+        [string[]] $Removed = @()
+    )
+
+    $addedSet = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($x in $Added) { if ($x) { $addedSet.Add($x) | Out-Null } }
+    $removedSet = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($x in $Removed) { if ($x) { $removedSet.Add($x) | Out-Null } }
+
+    # 消失的目錄要一起畫出來（標 [-]），否則信裡看不到少了什麼
+    $all = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+    foreach ($p in $Paths) { if ($p) { $all.Add($p) | Out-Null } }
+    foreach ($p in $Removed) {
+        if (-not $p) { continue }
+        # 連同其祖先一併補進來，否則畫樹時會缺層而掛在錯誤的位置
+        $segs = $p -split '/'
+        for ($i = 1; $i -le $segs.Count; $i++) {
+            $all.Add((($segs[0..($i - 1)]) -join '/')) | Out-Null
+        }
+    }
+
+    # 依父路徑分組，才能逐層遞迴輸出
+    $childrenOf = @{}
+    foreach ($p in $all) {
+        $segs = $p -split '/'
+        $parent = if ($segs.Count -gt 1) { ($segs[0..($segs.Count - 2)]) -join '/' } else { '' }
+        if (-not $childrenOf.ContainsKey($parent)) {
+            $childrenOf[$parent] = New-Object System.Collections.Generic.List[string]
+        }
+        $childrenOf[$parent].Add($p) | Out-Null
+    }
+
+    $lines = New-Object System.Collections.Generic.List[string]
+
+    # 以堆疊模擬遞迴：PowerShell 的巢狀函式在此不好傳遞閉包變數，
+    # 而且目錄深時遞迴呼叫的成本也高。堆疊元素為 路徑/縮排前綴/是否最後一個。
+    $stack = New-Object System.Collections.Generic.Stack[object]
+
+    $roots = @()
+    if ($childrenOf.ContainsKey('')) { $roots = @($childrenOf[''] | Sort-Object) }
+
+    # 反向推入，彈出時才是正序
+    for ($i = $roots.Count - 1; $i -ge 0; $i--) {
+        $stack.Push([pscustomobject]@{
+            Path     = $roots[$i]
+            Prefix   = ''
+            IsLast   = ($i -eq $roots.Count - 1)
+        }) | Out-Null
+    }
+
+    while ($stack.Count -gt 0) {
+        $node = $stack.Pop()
+        $segs = $node.Path -split '/'
+        $name = $segs[$segs.Count - 1]
+
+        $mark = ''
+        if ($addedSet.Contains($node.Path)) { $mark = ' [+]' }
+        elseif ($removedSet.Contains($node.Path)) { $mark = ' [-]' }
+
+        $branch = if ($node.IsLast) { '└─ ' } else { '├─ ' }
+        $lines.Add($node.Prefix + $branch + $name + $mark) | Out-Null
+
+        if ($childrenOf.ContainsKey($node.Path)) {
+            $kids = @($childrenOf[$node.Path] | Sort-Object)
+            # 子層的縮排：父節點是最後一個就用空白，否則要延續豎線
+            $childPrefix = $node.Prefix + $(if ($node.IsLast) { '   ' } else { '│  ' })
+            for ($i = $kids.Count - 1; $i -ge 0; $i--) {
+                $stack.Push([pscustomobject]@{
+                    Path   = $kids[$i]
+                    Prefix = $childPrefix
+                    IsLast = ($i -eq $kids.Count - 1)
+                }) | Out-Null
+            }
+        }
+    }
+
+    return ($lines -join "`r`n")
+}
+
+<#
+.SYNOPSIS
+  寄出目錄樹變動通知信。
+
+.DESCRIPTION
+  設定放在 config.json 的 Mail 區段：
+    "Mail": {
+      "SmtpServer": "smtp.office365.com",
+      "Port": 587,
+      "UseSsl": true,
+      "User": "someone@asiavista.com.tw",
+      "Password": "應用程式密碼",
+      "From": "someone@asiavista.com.tw",
+      "To": [ "maintainer@asiavista.com.tw" ]
+    }
+
+  ⚠️ Microsoft 365 若帳號啟用了多重驗證，必須用「應用程式密碼」，
+     一般登入密碼會被拒絕（回 5.7.57 或 SmtpAuthenticationException）。
+     租用戶也可能停用了 SMTP AUTH，需請系統管理員開啟。
+
+  寄信失敗絕不可中斷主流程：目錄樹已經推送成功了，通知信只是附加價值。
+#>
+function Send-TreeChangeMail {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)] $MailConfig,
+        [Parameter(Mandatory)][string] $Subject,
+        [Parameter(Mandatory)][string] $Body,
+        [string] $LogFile
+    )
+
+    if (-not $MailConfig) { return $false }
+
+    $names = $MailConfig.PSObject.Properties.Name
+    foreach ($req in @('SmtpServer', 'User', 'Password', 'To')) {
+        if (-not ($names -contains $req) -or -not $MailConfig.$req) {
+            Write-Log -Message "郵件設定缺少 $req，略過寄信" -Level 'WARN' -LogFile $LogFile
+            return $false
+        }
+    }
+
+    $to = @($MailConfig.To | Where-Object { $_ })
+    if ($to.Count -eq 0) {
+        Write-Log -Message '郵件設定的收件者是空的，略過寄信' -Level 'WARN' -LogFile $LogFile
+        return $false
+    }
+
+    $from = if ($names -contains 'From' -and $MailConfig.From) { $MailConfig.From } else { $MailConfig.User }
+    $port = if ($names -contains 'Port' -and $MailConfig.Port) { [int]$MailConfig.Port } else { 587 }
+    $useSsl = if ($names -contains 'UseSsl') { [bool]$MailConfig.UseSsl } else { $true }
+
+    try {
+        $msg = New-Object Net.Mail.MailMessage
+        $msg.From = New-Object Net.Mail.MailAddress($from)
+        foreach ($t in $to) { $msg.To.Add($t) }
+        $msg.Subject = $Subject
+        $msg.Body = $Body
+        # 明確指定 UTF-8，否則中文目錄名在部分郵件客戶端會變亂碼
+        $msg.SubjectEncoding = [Text.Encoding]::UTF8
+        $msg.BodyEncoding = [Text.Encoding]::UTF8
+        $msg.IsBodyHtml = $false
+
+        $smtp = New-Object Net.Mail.SmtpClient($MailConfig.SmtpServer, $port)
+        $smtp.EnableSsl = $useSsl
+        $smtp.Credentials = New-Object Net.NetworkCredential($MailConfig.User, $MailConfig.Password)
+        $smtp.Timeout = 60000
+
+        $smtp.Send($msg)
+        $msg.Dispose()
+        $smtp.Dispose()
+
+        Write-Log -Message ("已寄出變動通知信給 {0}" -f ($to -join '、')) -LogFile $LogFile
+        return $true
+    }
+    catch {
+        # 寄信失敗不影響目錄樹推送的結果，只記錄
+        Write-Log -Message ("寄信失敗（目錄樹已推送成功，不影響上傳）：{0}" -f $_.Exception.Message) `
+            -Level 'WARN' -LogFile $LogFile
+        return $false
+    }
 }
 
 <#
