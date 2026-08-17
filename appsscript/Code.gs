@@ -499,10 +499,14 @@ function actionTree(token) {
     if (rel === '') continue;  // root 自身不列為節點，前端以「根目錄」呈現
 
     var parts = rel.split('/');
+    // 一律以 path 的最後一段當顯示名稱，不採信 name 欄。
+    // name 欄曾被 Sheet 的自動轉型改掉內容（「0225」→225、
+    // 「113-07-19」→0113-07-19），而 path 含 / 不會被轉型，比較可信。
+    // 這樣即使分頁裡還留著轉型過的舊資料，選單顯示的仍是真實目錄名。
     out.push({
       path:   rel,
       parent: parts.length > 1 ? parts.slice(0, -1).join('/') : '',
-      name:   s(rows[i].name) || parts[parts.length - 1]
+      name:   parts[parts.length - 1]
     });
   }
 
@@ -744,7 +748,14 @@ function actionUpdateTree(body, token) {
       sh.getRange(2, 1, sh.getLastRow() - 1, TREE_HEADERS.length).clearContent();
     }
     if (rows.length) {
-      sh.getRange(2, 1, rows.length, TREE_HEADERS.length).setValues(rows);
+      var target = sh.getRange(2, 1, rows.length, TREE_HEADERS.length);
+      // ⚠️ 先設純文字格式再寫值，否則 Sheet 會自作主張轉型目錄名稱：
+      //   「0225」      → 當成數字，開頭的 0 被吃掉，變成 225
+      //   「113-07-19」 → 當成日期解析，民國年被補成四位數，變成 0113-07-19
+      // path 欄因為總是含 / 而僥倖沒事，但 name 欄實際已經壞掉，
+      // 手機選單顯示的目錄名會與真實資料夾名稱對不起來，現場容易選錯。
+      target.setNumberFormat('@');
+      target.setValues(rows);
     }
   } finally {
     lock.releaseLock();
@@ -865,6 +876,11 @@ function setupSheets() {
   // USERS 的 password 欄設為純文字，避免純數字密碼被轉成數字、開頭 0 消失
   var users = sheet(SHEET_USERS, USERS_HEADERS);
   users.getRange('B2:B').setNumberFormat('@');
+
+  // TREE 整片設純文字：目錄名常是「0225」「113-07-19」這種，
+  // 預設格式會被 Sheet 當成數字或日期而改掉內容（見 actionUpdateTree）。
+  var tree = sheet(SHEET_TREE, TREE_HEADERS);
+  tree.getRange(2, 1, tree.getMaxRows() - 1, TREE_HEADERS.length).setNumberFormat('@');
 
   // md5 欄是後加的：既有 QUEUE 分頁的表頭沒有它，要補上才寫得進去。
   // 純文字格式，避免全數字的雜湊被 Sheet 當成數字（會變科學記號）。
