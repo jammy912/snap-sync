@@ -332,6 +332,47 @@ try {
         exit 0
     }
 
+    # ---- 與上一輪比對：沒變動就連推送都省掉 ----
+    # 排程 10 分鐘一輪，目錄通常整天都沒變，每輪都推等於白打端點、
+    # 也讓 TREE 分頁被無謂地清空重寫（updateTree 是覆寫語意）。
+    #
+    # ⚠️ 比對失敗時一律「照推不誤」：寧可多推一次，也不能因為快照壞掉
+    #    就讓手機選單停在舊資料。
+    $curPaths = @($items | ForEach-Object { [string]$_.path })
+    $curMarkers = @($allMarkers)
+    $prev = $null
+    $diff = $null
+    $mdiff = $null
+    $skipPush = $false
+
+    try {
+        $prev = Get-TreeSnapshot -Path $SnapshotFile
+        if ($null -ne $prev) {
+            $diff = Compare-TreeSnapshot -Before @($prev.paths) -After $curPaths
+            $mdiff = Compare-TreeSnapshot -Before @($prev.markers) -After $curMarkers
+
+            # 有任何一根掃描失敗時不可跳過推送：本輪的 $items 少了那些根，
+            # 與上一輪比對「看起來沒變」只是因為快照也是殘缺的，
+            # 這時該讓推送照常進行，由既有的失敗警告去反映狀況。
+            if (-not $diff.HasChange -and -not $mdiff.HasChange -and $failedRoots.Count -eq 0) {
+                $skipPush = $true
+            }
+        }
+    }
+    catch {
+        Write-Log -Message ("讀取上一輪快照失敗，本輪照常推送：{0}" -f $_.Exception.Message) `
+            -Level 'WARN' -LogFile $LogFile
+    }
+
+    if ($skipPush) {
+        Write-Log -Message ("目錄樹與上一輪完全相同（{0} 個目錄、{1} 個標記），跳過推送，不呼叫端點" -f `
+            $curPaths.Count, $curMarkers.Count) -LogFile $LogFile
+        Add-DailySummary -SummaryFile $SummaryFile `
+            -Stats @{ Runs = 1; Skipped = 1; Failed = 0 } `
+            -Notes ("無變動未推送（{0} 個目錄）" -f $curPaths.Count)
+        exit 0
+    }
+
     $resp = Invoke-SnapSyncApi -Endpoint $cfg.Endpoint -Method 'POST' -Payload @{
         action = 'updateTree'
         token  = $cfg.AdminToken
@@ -340,14 +381,10 @@ try {
 
     Write-Log -Message "推送完成：TREE 已更新 $($resp.count) 列（updatedAt=$($resp.updatedAt)）" -LogFile $LogFile
 
-    # ---- 與上一輪比對，有變動才寄通知信 ----
-    # 只在推送成功後才做：推失敗時 TREE 沒更新，寄「已變動」會誤導。
+    # ---- 有變動才寄通知信 ----
+    # 比對結果在上面已經算好（推送前就要判斷該不該跳過），這裡只負責寄信。
     # 整段包在 try 裡——通知信失敗絕不能影響已經成功的推送結果。
     try {
-        $curPaths = @($items | ForEach-Object { [string]$_.path })
-        $curMarkers = @($allMarkers)
-
-        $prev = Get-TreeSnapshot -Path $SnapshotFile
         $isFirstRun = ($null -eq $prev)
 
         if ($isFirstRun) {
@@ -356,10 +393,10 @@ try {
             Write-Log -Message '首次建立目錄樹快照，本輪不寄通知信（下一輪起才比對變動）' -LogFile $LogFile
         }
         else {
-            $diff = Compare-TreeSnapshot -Before @($prev.paths) -After $curPaths
-            $mdiff = Compare-TreeSnapshot -Before @($prev.markers) -After $curMarkers
-
+            # $diff / $mdiff 在推送前就算好了（要用來判斷能不能跳過推送）
             if (-not $diff.HasChange -and -not $mdiff.HasChange) {
+                # 走到這裡代表有根掃描失敗（否則上面就跳過推送了），
+                # 目錄本身沒變，沒有必要為此寄信打擾維護人員。
                 Write-Log -Message '目錄樹與上一輪相同，不寄通知信' -LogFile $LogFile
             }
             elseif ($NoMail) {
