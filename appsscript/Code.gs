@@ -315,6 +315,29 @@ function inSubtree(child, root) {
 }
 
 /**
+ * 在鎖內讀取 TREE。
+ *
+ * ⚠️ 讀 TREE 一律要走這裡，不要直接 readAll(SHEET_TREE, ...)。
+ *
+ * 真兇紀錄：actionUpdateTree 是「先 clearContent 再 setValues」兩步驟覆寫，
+ * 中間存在一段 TREE 為空的空窗。upload 的白名單比對原本沒有取鎖，
+ * 剛好落在空窗內的請求會讀到空的 TREE，於是路徑完全正確的照片也被判
+ * UNKNOWN_PATH 退件——症狀是「同一批拍的照片，有的成功有的失敗」。
+ *
+ * LockService 的 script lock 是互斥鎖而非讀寫鎖，只擋得住同樣來搶這把鎖的人，
+ * 所以讀取端也必須取同一把鎖才有意義。
+ */
+function readTreeLocked() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(LOCK_TIMEOUT_MS);
+  try {
+    return readAll(SHEET_TREE, TREE_HEADERS);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
  * 把 tree 端點回傳的「相對路徑」組回完整路徑。
  *
  * tree 回傳的 path 是相對於使用者 rootPath 的（rootPath=專案A 時回「區域1」），
@@ -461,7 +484,8 @@ function actionTree(token) {
     return json({ ok: false, error: String(err.message), message: '請重新登入' });
   }
 
-  var rows = readAll(SHEET_TREE, TREE_HEADERS);
+  // 同樣要在鎖內讀：撞上覆寫空窗會讓使用者拿到空的目錄選單（見 readTreeLocked）
+  var rows = readTreeLocked();
   var root = user.rootPath;
   var out = [];
 
@@ -536,7 +560,8 @@ function actionUpload(body, token) {
   }
 
   // 防護二：必須命中 TREE 白名單（擋掉不存在的任意路徑）
-  var treeRows = readAll(SHEET_TREE, TREE_HEADERS);
+  // 必須在鎖內讀取，否則會撞上 updateTree 的覆寫空窗而誤退合法照片（見 readTreeLocked）
+  var treeRows = readTreeLocked();
   var hit = false;
   for (var i = 0; i < treeRows.length; i++) {
     if (normPath(treeRows[i].path) === targetPath) { hit = true; break; }
@@ -570,11 +595,28 @@ function actionUpload(body, token) {
     var queueRows = readAll(SHEET_QUEUE, QUEUE_HEADERS);
     for (var q = 0; q < queueRows.length; q++) {
       if (s(queueRows[q].id) === id) {
+        // ⚠️ 必須回報 verified，否則手機端永遠刪不掉本機副本。
+        //
+        // 真兇紀錄：這個分支原本沒有 verified 欄位，而前端 queue.js 的
+        // 「上傳成功唯一定義」是 resp.verified === true。於是只要第一次上傳
+        // 成功寫入 QUEUE、但回應在網路上遺失（切網、逾時），手機重送時就會
+        // 走到這裡，拿到一個沒有 verified 的成功回應 → 判定「伺服器未回報
+        // 校驗結果」→ 保留本機繼續重送 → 每次都走冪等分支 → 無限迴圈，
+        // 照片明明已在雲端卻永遠傳不完。
+        //
+        // 能寫進 QUEUE 就代表當初已通過 md5 比對（見下方嚴格模式），
+        // 所以這裡的 verified 取決於該列是否留有 md5：
+        // 有 md5 = 當初驗證通過；沒有 md5 = 早期資料，無法證明，不敢放行。
+        var prevMd5 = s(queueRows[q].md5);
         return json({
           ok: true,
           duplicated: true,
           driveFileId: s(queueRows[q].driveFileId),
-          message: '此照片已上傳過'
+          md5: prevMd5,
+          verified: prevMd5 !== '',
+          message: prevMd5 !== ''
+            ? '此照片已上傳過'
+            : '此照片已上傳過，但無校驗記錄，請確認後手動刪除'
         });
       }
     }
