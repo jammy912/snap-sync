@@ -336,13 +336,37 @@ App.queue = (function () {
           img.src = url;
           // blob 讀不到時，顯示明確訊息而不是瀏覽器的破圖圖示——
           // 現場看到「?」方塊只會困惑，不知道照片還在不在。
+          // ⚠️ 載入失敗先【重讀 IndexedDB 重試一次】，不要立刻判定破圖。
+          //
+          // 真兇：iOS Safari 在 App 切到背景／螢幕關閉時會回收 blob 資源，
+          // 回到前景後既有的 objectURL 就失效了，但 IndexedDB 裡的 blob
+          // 完好無損——所以那些照片傳出去的檔案是正常的，壞的只是預覽網址。
+          // 現場症狀：離線一段時間回來，部分縮圖變成「預覽讀取失敗」。
+          //
+          // 重讀一次拿到新的 blob 再產生新 URL 即可救回；真的讀不到才報錯。
           img.onerror = function () {
-            div.classList.add('broken');
-            img.remove();
-            var w = document.createElement('div');
-            w.className = 'thumb-broken';
-            w.textContent = '預覽讀取失敗';
-            div.insertBefore(w, div.firstChild);
+            App.db.get(r.id).then(function (fresh) {
+              if (!fresh || !(fresh.blob instanceof Blob)) { throw new Error('no blob'); }
+              var url2 = URL.createObjectURL(fresh.blob);
+              objectURLs.push(url2);
+              // 第二次仍失敗才顯示錯誤，避免無限重試
+              img.onerror = function () {
+                div.classList.add('broken');
+                img.remove();
+                var w = document.createElement('div');
+                w.className = 'thumb-broken';
+                w.textContent = '預覽讀取失敗';
+                div.insertBefore(w, div.firstChild);
+              };
+              img.src = url2;
+            }).catch(function () {
+              div.classList.add('broken');
+              img.remove();
+              var w = document.createElement('div');
+              w.className = 'thumb-broken';
+              w.textContent = '預覽讀取失敗';
+              div.insertBefore(w, div.firstChild);
+            });
           };
         } else {
           div.classList.add('broken');
@@ -823,6 +847,14 @@ App.queue = (function () {
 
     // 恢復連線：只續送【已確認】的那些；未確認的只提示，不偷跑
     //（使用者可能還在拍、或正要刪掉拍壞的那幾張）。
+    // 回到前景時重繪整個佇列，把失效的 objectURL 一次全換掉。
+    // iOS 在背景會回收 blob 資源（見上方 img.onerror 的說明），
+    // 不主動重繪的話，使用者會先看到一整片「預覽讀取失敗」才逐張救回。
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState !== 'visible') return;
+      if ($('queueView').classList.contains('active')) { render(); }
+    });
+
     window.addEventListener('online', function () {
       App.db.all().then(function (recs) {
         var pending = pendingOf(recs);
