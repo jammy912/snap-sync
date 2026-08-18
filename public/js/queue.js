@@ -185,13 +185,17 @@ App.queue = (function () {
    * 使用者看不出到底有沒有在動（實際回報過的狀況）。
    * 佇列分頁沒開著時只更新數字徽章，省下重繪縮圖的成本。
    */
-  function tick() {
+  function tick(light) {
     return refreshBadge().then(function () {
       // 目錄浮層開著時，讓各目錄的 (張數) 跟著往下掉
       if (App.tree.isSheetOpen()) {
         return App.tree.refreshCounts().then(App.tree.render);
       }
     }).then(function () {
+      // light=true：傳送過程中每送完一張呼叫，只更新數字不重繪縮圖。
+      // 重繪整個 grid 要撤銷並重建所有 objectURL，密集呼叫時多次 render
+      // 會互相踩到彼此的 URL（見 render 的說明）。整批結束再重繪一次即可。
+      if (light) { return; }
       if ($('queueView').classList.contains('active')) return render();
     }).catch(function () { /* 畫面更新失敗不該中斷上傳 */ });
   }
@@ -268,7 +272,7 @@ App.queue = (function () {
           if (cancelRequested) { cancelled = true; return; }
           return uploadOne(rec).then(function () {
             ok++;
-            return tick();           // 這張已送出，立刻讓計數往下跳
+            return tick(true);       // 只更新計數，不重繪縮圖（見 tick 的說明）
           }).catch(function (err) {
             if (App.auth.isAuthError(err)) {
               // 憑證失效：停止本輪，保留所有照片。
@@ -289,7 +293,7 @@ App.queue = (function () {
               retryCount: rec.retryCount,
               lastError: rec.lastError,
               lastTryAt: rec.lastTryAt
-            }).then(tick);                       // 失敗徽章也要即時反映
+            }).then(function () { return tick(true); });   // 只更新徽章
           });
         });
       }, Promise.resolve());
@@ -340,8 +344,29 @@ App.queue = (function () {
     objectURLs = [];
   }
 
+  // 渲染世代編號。傳送時 tick() 每送完一張就呼叫 render()，
+  // 密集觸發會讓多次 render 重疊執行（見下方說明）。
+  var renderSeq = 0;
+
   function render() {
+    // ⚠️ 這裡的競態會讓【整頁縮圖同時變成「預覽讀取失敗」】。
+    //
+    // render 的 App.db.all() 是非同步的。連續呼叫時：
+    //   A 開始 → all() 等待中
+    //   B 開始 → all() 等待中
+    //   A 回來 → revokeURLs() 清空、建立新 URL、掛上 DOM
+    //   B 回來 → revokeURLs() 把 A 剛建立的 URL 全部撤銷！
+    //            但 DOM 上的 <img src> 還指著它們 → 全部載入失敗
+    //
+    // 症狀正是「按下傳送就全部跳預覽失敗，等自動重送後又恢復」——
+    // 傳送會密集觸發 tick()，自動重送時 render 只跑一次就不會重疊。
+    //
+    // 用世代編號讓過期的渲染直接放棄，只有最新的那次能動 DOM 與 URL。
+    var seq = ++renderSeq;
+
     return App.db.all().then(function (recs) {
+      if (seq !== renderSeq) { return; }   // 已有更新的 render 接手，放棄本次
+
       var grid = $('grid');
       revokeURLs();
       grid.innerHTML = '';
@@ -388,7 +413,11 @@ App.queue = (function () {
           //
           // 重讀一次拿到新的 blob 再產生新 URL 即可救回；真的讀不到才報錯。
           img.onerror = function () {
+            // 已有更新的 render 接手就不必救了——這個 img 馬上會被換掉，
+            // 硬救反而會把新 URL 推進即將被撤銷的清單裡。
+            if (seq !== renderSeq) { return; }
             App.db.get(r.id).then(function (fresh) {
+              if (seq !== renderSeq) { return; }
               if (!fresh || !(fresh.blob instanceof Blob)) { throw new Error('no blob'); }
               var url2 = URL.createObjectURL(fresh.blob);
               objectURLs.push(url2);
