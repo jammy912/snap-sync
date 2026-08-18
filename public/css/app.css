@@ -378,11 +378,16 @@ nav.tabs .tab-sub:empty { display: none; }
 .user-card .k { color: var(--muted); display: inline-block; min-width: 76px; }
 
 /* ---------- Toast ---------- */
+/* ⚠️ 從【上方】滑入，不可放在底部。
+   底部是快門與相機控制列的位置，拍照後跳出的「已存至…」會正好蓋住快門，
+   連拍時整顆按不到（實測回報）。上方只有標題列，不擋任何操作元件。 */
 #toast {
-  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+  position: fixed; top: calc(12px + env(safe-area-inset-top, 0)); left: 50%;
+  transform: translateX(-50%) translateY(-20px);
   background: var(--panel2); color: var(--text); padding: 12px 20px;
   border-radius: 10px; font-size: 14px; opacity: 0; pointer-events: none;
   transition: all .25s; z-index: 400; border: 1px solid var(--border);
   max-width: 90%; text-align: center;
+  box-shadow: 0 6px 20px rgba(0,0,0,.45);   /* 疊在相機畫面上仍要看得清楚 */
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }

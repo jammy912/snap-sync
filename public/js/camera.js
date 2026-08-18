@@ -90,11 +90,11 @@ App.camera = (function () {
       };
 
       App.db.add(rec).then(function () {
-        // 明確講出存到哪個目錄——整批拍完才發現選錯目錄的代價很高。
-        // 路徑深時只顯示最後兩層，否則在手機上會被截斷。
+        // 只講最後一層目錄與大小，維持單行。
+        // 完整路徑已常駐在上方的「上傳至」列，這裡重複只會把 toast 撐成兩行，
+        // 在相機畫面上佔掉更多視野。
         var parts = target.split('/');
-        var shown = parts.length > 2 ? '…/' + parts.slice(-2).join('/') : target;
-        toast('已存至 ' + shown + ' · ' + App.util.fmtSize(blob.size));
+        toast('已存至 ' + parts[parts.length - 1] + ' · ' + App.util.fmtSize(blob.size));
         // 【不自動上傳】拍完只入佇列，等使用者確認完按「傳送」才送。
         // 原本拍一張就送一張，會在連拍時邊拍邊佔網路，
         // 也讓「拍錯想刪掉重拍」變得來不及——照片早就上雲端了。
