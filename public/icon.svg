@@ -1,0 +1,11 @@
+<!-- PWA 主畫面圖示。風格與 App 內的相機按鈕一致：線條、圓端點、
+     康庭青綠 #39c5b3。maskable 用途要求重要內容留在中央 80% 的安全區內
+     （Android 會裁成圓形／方圓形），故相機本體只佔中央區域。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="112" fill="#12181c"/>
+  <g fill="none" stroke="#39c5b3" stroke-width="26"
+     stroke-linecap="round" stroke-linejoin="round">
+    <path d="M104 196a34 34 0 0 1 34-34h44l30-42h96l30 42h44a34 34 0 0 1 34 34v144a34 34 0 0 1-34 34H138a34 34 0 0 1-34-34z"/>
+    <circle cx="256" cy="272" r="72"/>
+  </g>
+</svg>

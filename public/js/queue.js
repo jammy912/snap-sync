@@ -175,6 +175,10 @@ App.queue = (function () {
     cancelRequested = false;      // 每次開始傳送都重置，否則上一輪的取消會殘留
     var ok = 0, fail = 0, authFailed = false, cancelled = false;
 
+    // 反向情況：已在選取模式時傳送啟動了（例如自動重送、恢復連線續送）。
+    // 選取列還開著會讓人以為刪得掉，實際上刪除已被擋下，直接退出比較誠實。
+    if (selecting) { exitSelect(); }
+
     // 手動按傳送：先把「目前佇列裡的照片」逐筆標記為已確認。
     // 標記完才開始送，因此標記之後才拍的照片不在這一批裡，
     // 必須等這批送完、使用者再按一次傳送才會送出。
@@ -559,6 +563,15 @@ App.queue = (function () {
 
       var btn = $('sendNowBtn');
 
+      // 傳送中把「選取」停用並變灰，讓使用者一眼看出不能選，
+      // 而不是按下去才被 toast 擋回來。放在 flushing 分支之前——
+      // 那個分支會提早 return。
+      var selBtn = $('selectModeBtn');
+      if (selBtn) {
+        selBtn.disabled = flushing;
+        selBtn.title = flushing ? '傳送中無法選取' : '';
+      }
+
       if (flushing) {
         // 傳送中：按鈕變成「取消傳送」，讓使用者能中途停手
         //（例如選錯目錄、或臨時要先傳別批）。
@@ -619,6 +632,13 @@ App.queue = (function () {
   }
 
   function enterSelect() {
+    // 傳送中不給進選取模式。
+    // 刪除本來就被擋（正在送的那張被刪會讓 uploadOne 拿到失效記錄），
+    // 讓使用者選了一輪才發現不能刪，不如一開始就說清楚。
+    if (flushing) {
+      toast('傳送中無法選取，請先按「取消傳送」');
+      return Promise.resolve();
+    }
     selecting = true;
     picked = {};
     var bar = $('selectBar'), btn = $('selectModeBtn');
