@@ -14,7 +14,7 @@ App.app = (function () {
   var VERSION = 'v13';
 
   var SETTINGS_KEY = 'ss_settings';
-  var settings = { maxEdge: 1600, quality: 0.7 };   // 規劃書建議值
+  var settings = { maxEdge: 1600, quality: 0.8 };
 
   function loadSettings() {
     try {
@@ -28,7 +28,7 @@ App.app = (function () {
 
   function saveSettings() {
     settings.maxEdge = Math.min(4000, Math.max(400, parseInt($('maxEdge').value, 10) || 1600));
-    settings.quality = Math.min(1, Math.max(0.1, parseFloat($('quality').value) || 0.7));
+    settings.quality = Math.min(1, Math.max(0.1, parseFloat($('quality').value) || 0.8));
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     $('maxEdge').value = settings.maxEdge;
     $('quality').value = settings.quality;
