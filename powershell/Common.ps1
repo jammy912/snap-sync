@@ -649,11 +649,36 @@ function Get-WatermarkText {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string] $Dir,
-        [string] $MarkerName = '.snapsync'
+        [string] $MarkerName = '.snapsync',
+        # 往上找的層數上限。設界限是防呆：路徑解析出錯時不會一路找到磁碟根，
+        # 誤套用到別的案場的工程資訊。
+        [int] $MaxUp = 8,
+        [string] $RootDir
     )
 
-    $marker = Join-Path $Dir $MarkerName
-    if (-not (Test-Path -LiteralPath $marker)) { return $null }
+    # ⚠️ 必須【往上層找】最近的標記檔，不能只看照片所在目錄。
+    #
+    # 這與目錄樹的開通邏輯一致：標記放在「115-8」時，它與底下所有子目錄
+    # 都會納入 TREE，照片實際落在子目錄（例如 115-8\1.客美多咖啡）。
+    # 只找當層的話，除非每個末端目錄都放一份標記檔，否則永遠找不到
+    # （實測症狀：log 顯示落地成功但完全沒有壓浮水印的記錄）。
+    #
+    # 找到最近的一個就停——子目錄的標記優先於父目錄，讓個別現場可覆寫。
+    $marker = $null
+    $cur = $Dir
+    for ($i = 0; $i -le $MaxUp -and $cur; $i++) {
+        $try = Join-Path $cur $MarkerName
+        if (Test-Path -LiteralPath $try) { $marker = $try; break }
+
+        # 不可超出該根目錄，否則會撈到別的案場的資訊
+        if ($RootDir -and $cur.TrimEnd('\') -ieq $RootDir.TrimEnd('\')) { break }
+
+        $parent = Split-Path -Parent $cur
+        if (-not $parent -or $parent -eq $cur) { break }   # 已到磁碟／UNC 根
+        $cur = $parent
+    }
+
+    if (-not $marker) { return $null }
 
     try {
         # 標記檔多半由現場人員用記事本建立，可能是 UTF-8（有無 BOM）或 ANSI。

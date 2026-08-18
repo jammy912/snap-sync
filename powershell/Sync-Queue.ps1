@@ -194,7 +194,8 @@ try {
             #
             # 壓字失敗不影響落地結果：照片已經正確寫入磁碟並驗證過了，
             # 缺浮水印是可補的，為此把照片留在雲端重試反而增加風險。
-            $wmText = Get-WatermarkText -Dir $fullTargetDir
+            # 傳 RootDir：往上找標記檔時不可超出該根，否則會撈到別的案場的資訊
+            $wmText = Get-WatermarkText -Dir $fullTargetDir -RootDir $rootFull
             if ($wmText) {
                 if (Add-PhotoWatermark -Path $destPath -Text $wmText -LogFile $LogFile) {
                     Write-Log -Message "  已壓浮水印（$($wmText -split "`n" | Measure-Object | Select-Object -ExpandProperty Count) 行）" -LogFile $LogFile
