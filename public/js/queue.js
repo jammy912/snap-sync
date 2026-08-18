@@ -117,10 +117,49 @@ App.queue = (function () {
     }).catch(function () { /* 排程失敗不影響手動傳送 */ });
   }
 
+  /**
+   * 把技術性錯誤轉成現場看得懂的說法。
+   *
+   * 這些訊息會顯示在照片的「上次失敗」欄位，現場人員看到
+   * 「Error preparing Blob/File data to be stored in object store」
+   * 只會困惑，不知道照片還在不在、要不要重拍。
+   */
+  function friendlyError(err) {
+    var m = (err && err.message) ? String(err.message) : String(err);
+    if (/Blob|File data|object store/i.test(m)) {
+      return '照片暫時讀不到（系統回收記憶體），會自動重試';
+    }
+    if (/Failed to fetch|NetworkError|Load failed/i.test(m)) {
+      return '網路不穩，會自動重送';
+    }
+    if (/timeout|逾時/i.test(m)) {
+      return '連線逾時，會自動重送';
+    }
+    return m;
+  }
+
   function uploadOne(rec) {
-    return blobToBase64(rec.blob).then(function (b64) {
+    // ⚠️ 上傳前【重新讀取】這筆記錄，不直接用傳進來的 rec.blob。
+    //
+    // 真兇：iOS 會在背景回收 blob 的記憶體參照。rec 來自 flush 開頭的
+    // App.db.all()，整批送出時排在後面的那幾筆可能已經放了很久，
+    // 此時 FileReader 讀它會拋「Error preparing Blob/File data to be
+    // stored in object store」，但下一輪重試重新讀出來又是好的——
+    // 症狀就是「一直重送、最後某次突然成功」。
+    //
+    // 重讀成本很低（IndexedDB 本地讀取），換來的是不必靠運氣重試。
+    return App.db.get(rec.id).then(function (fresh) {
+      // 已被刪除或上傳成功而移除：視為完成，不再送
+      if (!fresh) { return null; }
+      if (!(fresh.blob instanceof Blob)) {
+        throw new Error('照片資料遺失，請刪除此筆後重拍');
+      }
+      return blobToBase64(fresh.blob);
+    }).then(function (b64) {
+      if (b64 === null) { return null; }   // 記錄已不存在
       return App.api.upload(App.auth.token(), rec, b64);
     }).then(function (resp) {
+      if (resp === null) { return; }       // 記錄已不存在，無需後續處理
       // 【上傳成功的唯一定義：校驗通過】
       //
       // 伺服器端會拿 Drive 回報的 md5Checksum 與收到的位元組比對，不一致
@@ -244,7 +283,7 @@ App.queue = (function () {
             // 只寫回重試欄位，絕不整筆 put——那會連 blob 一起寫回去，
             // 在 iOS 上會讓失敗的那張變破圖（見 db.patch 的說明）。
             rec.retryCount = (rec.retryCount || 0) + 1;
-            rec.lastError = err.message || String(err);
+            rec.lastError = friendlyError(err);
             rec.lastTryAt = Date.now();
             return App.db.patch(rec.id, {
               retryCount: rec.retryCount,
@@ -278,7 +317,11 @@ App.queue = (function () {
         return tick();
       });
     }).catch(function (err) {
-      toast('上傳流程錯誤：' + err.message);
+      // 技術性訊息對現場人員沒有意義（例如 IndexedDB 的
+      // 「Error preparing Blob/File data...」），只講後果與該怎麼辦。
+      // 完整訊息仍寫進 console，排查時看得到。
+      console.error('[queue] flush 失敗', err);
+      toast('傳送中斷，未送出的照片仍保留在本機，稍後會自動重送');
     }).finally(function () {
       // 先解鎖再更新畫面，否則「傳送」鍵會停在 disabled
       // （refreshBadge 是依 flushing 決定按鈕狀態的）
