@@ -1,11 +1,37 @@
-<!-- PWA 主畫面圖示。風格與 App 內的相機按鈕一致：線條、圓端點、
-     康庭青綠 #39c5b3。maskable 用途要求重要內容留在中央 80% 的安全區內
-     （Android 會裁成圓形／方圓形），故相機本體只佔中央區域。 -->
+<!-- PWA 主畫面圖示原始檔。改圖示時改這裡，再用 Chrome headless 轉 PNG：
+       chrome --headless --screenshot=out.png --window-size=512,512 <包住此 svg 的 html>
+     需產出三個檔：icon-192.png / icon-512.png / icon-maskable-512.png
+     （maskable 版另外加 scale(0.8) 並移除圓角，見 manifest 的說明）
+
+     設計：相機為主體（康庭青綠 #39c5b3），蟑螂與老鼠剪影放在下方兩角，
+     用低對比的 #44646e——點出害蟲防治的業務，但不與主體搶視覺。
+     兩者刻意不與相機重疊：試過疊在背景會被相機蓋掉，縮小後只剩零碎邊角
+     像雜訊。害蟲線條 12px 是為了在 60px 的實際顯示尺寸下仍分辨得出。 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <rect width="512" height="512" rx="112" fill="#12181c"/>
-  <g fill="none" stroke="#39c5b3" stroke-width="26"
-     stroke-linecap="round" stroke-linejoin="round">
+
+  <!-- 相機：縮小並上移，讓出下方兩角 -->
+  <g fill="none" stroke="#39c5b3" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"
+     transform="translate(256,232) scale(0.78) translate(-256,-256)">
     <path d="M104 196a34 34 0 0 1 34-34h44l30-42h96l30 42h44a34 34 0 0 1 34 34v144a34 34 0 0 1-34 34H138a34 34 0 0 1-34-34z"/>
     <circle cx="256" cy="272" r="72"/>
+  </g>
+
+  <g fill="none" stroke="#44646e" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <!-- 蟑螂（左下）：身體 + 觸角 + 三對腳 -->
+    <g transform="translate(120,408) rotate(-15)">
+      <ellipse cx="0" cy="0" rx="26" ry="38"/>
+      <path d="M-9-36 L-24-60 M9-36 L24-60"/>
+      <path d="M-24-14 L-46-26 M24-14 L46-26
+               M-26 3 L-50 3   M26 3 L50 3
+               M-24 19 L-44 36 M24 19 L44 36"/>
+    </g>
+    <!-- 老鼠（右下）：身體 + 耳朵 + 捲尾 + 眼睛 -->
+    <g transform="translate(388,412)">
+      <path d="M-36 4a36 27 0 0 1 72 0a36 27 0 0 1-72 0"/>
+      <circle cx="-27" cy="-20" r="15"/>
+      <path d="M36 0 C62 -9 66 22 46 31"/>
+      <circle cx="-41" cy="4" r="4" fill="#44646e" stroke="none"/>
+    </g>
   </g>
 </svg>
