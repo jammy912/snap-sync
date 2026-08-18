@@ -770,22 +770,21 @@ App.queue = (function () {
 
   function init() {
     initViewer();
-    $('retryAllBtn').onclick = function () { flush(false); };
-
-    // 同一顆按鈕兩種行為：閒置時送出、傳送中則取消
-    $('sendNowBtn').onclick = function () {
-      if (flushing) { cancelFlush(); } else { flush(false); }
-    };
-
-    // ⚠️ 這裡一律用 on() 綁定，不可寫成 $('id').onclick = ...
-    //    Service Worker 是 stale-while-revalidate，js 已更新但 index.html
-    //    還是快取的舊版時，這些元素會是 null，直接設 onclick 會拋 TypeError，
-    //    使 init() 中斷、連後面的 online 監聽都綁不上，整個佇列功能失效。
+    // ⚠️ 一律用 on() 綁定，不可寫成 $('id').onclick = ...
+    //    Service Worker 曾讓 js 已更新、index.html 仍是快取舊版，
+    //    此時元素為 null，直接設 onclick 會拋 TypeError 中斷整個 init()，
+    //    連後面的 online 監聽都綁不上（v10 的複選功能就是這樣整組失效的）。
     function on(id, fn) {
       var el = $(id);
       if (el) { el.onclick = fn; }
       else { console.warn('[queue] 找不到元素 ' + id + '，前端可能是舊版快取'); }
     }
+
+    // 同一顆按鈕三種行為：閒置時送出／重試、傳送中則取消。
+    // 文案由 refreshBadge 依狀態切換為「傳送」「立即重試」「取消傳送」。
+    on('sendNowBtn', function () {
+      if (flushing) { cancelFlush(); } else { flush(false); }
+    });
 
     on('selectModeBtn', function () { enterSelect(); });
     on('selectCancelBtn', function () { exitSelect(); });

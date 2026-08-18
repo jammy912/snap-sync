@@ -110,11 +110,13 @@
       <span class="send-info" id="sendInfo">—</span>
       <button class="btn btn-primary send-btn" id="sendNowBtn">傳送</button>
     </div>
+    <!-- 「立即重送」已移除：flush(false) 本來就會忽略退避、把所有已確認的
+         一起送，與上方「傳送」鍵完全同功能。兩顆並排只會讓人猶豫該按哪顆，
+         傳送鍵的文案已依狀態切換為「立即重試」涵蓋此情境。 -->
     <div class="toolbar">
       <span id="queueInfo">—</span>
       <span class="spacer"></span>
       <button class="mini-btn" id="selectModeBtn">選取</button>
-      <button class="mini-btn" id="retryAllBtn">立即重送</button>
     </div>
     <!-- 多選模式的操作列：只在選取模式下顯示 -->
     <div class="toolbar select-bar" id="selectBar" style="display:none">
