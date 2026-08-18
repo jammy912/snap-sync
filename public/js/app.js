@@ -11,9 +11,11 @@ App.app = (function () {
   // ⚠️ 改版時要跟 sw.js 的 CACHE 版本號一起遞增，兩者必須一致。
   // 顯示在標題右側，讓現場回報問題時能直接確認手機上跑的是哪一版——
   // PWA 會快取前端資源，「我已經部署了」不等於「使用者拿到了」。
-  var VERSION = 'v18';
+  var VERSION = 'v19';
 
   var SETTINGS_KEY = 'ss_settings';
+  // watermark 不寫進 settings（不記憶）：每次開相機拿到授權後都會詢問，
+  // 由使用者當下決定這一輪要不要加。實際值放在 camera.js 的模組變數裡。
   var settings = { maxEdge: 1600, quality: 0.8 };
 
   function loadSettings() {
@@ -155,6 +157,26 @@ App.app = (function () {
     });
   }
 
+  /**
+   * 鎖定直向。
+   *
+   * 橫置時相機預覽會被壓成一條細長條，幾乎不能用（現場實測）。
+   *
+   * ⚠️ 三種手段都有各自的侷限，所以三個都做：
+   *   1. manifest 的 orientation:portrait —— Android 有效，iOS Safari 無視
+   *   2. screen.orientation.lock() —— 需要 PWA 已安裝且全螢幕，iOS 不支援
+   *   3. CSS 的橫置版面補救（見 app.css 的 orientation: landscape）
+   *      —— iOS 只能靠這個，至少讓橫置時仍可操作
+   */
+  function lockOrientation() {
+    try {
+      if (screen.orientation && screen.orientation.lock) {
+        // 未安裝為 PWA 時會被拒絕，屬預期情況，不必回報
+        screen.orientation.lock('portrait').catch(function () {});
+      }
+    } catch (e) {}
+  }
+
   function registerSW() {
     if (!('serviceWorker' in navigator)) return;
     if (location.protocol === 'file:') return;
@@ -171,6 +193,7 @@ App.app = (function () {
     updateNet();
     registerSW();
     preventZoom();
+    lockOrientation();
     initInstall();
 
     App.auth.init();

@@ -438,3 +438,61 @@ nav.tabs .tab-sub:empty { display: none; }
   box-shadow: 0 6px 20px rgba(0,0,0,.45);   /* 疊在相機畫面上仍要看得清楚 */
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* ---------- 浮水印詢問 ---------- */
+/* z-index 320：蓋過目錄浮層(250)與放大檢視(300)，但低於 toast(400)。
+   相機一啟動就跳出，必須在最上層才不會被其他浮層蓋住。 */
+.wm-ask {
+  position: fixed; inset: 0; z-index: 320;
+  background: rgba(0,0,0,.72);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
+  animation: fadeIn .15s ease;
+}
+.wm-box {
+  width: 100%; max-width: 340px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 14px; padding: 20px;
+}
+.wm-title { font-size: 17px; font-weight: 600; margin-bottom: 10px; }
+.wm-desc { font-size: 13px; color: var(--muted); line-height: 1.7; margin-bottom: 14px; }
+.wm-desc strong { color: var(--warn); font-weight: 600; }
+/* 預覽：讓使用者看到浮水印實際長什麼樣，不必先拍一張才知道 */
+.wm-preview {
+  background: #2a2a2a; color: #fff; border-radius: 8px;
+  padding: 10px 12px; font-size: 13px; font-weight: 600;
+  margin-bottom: 18px; text-align: left;
+  border: 1px solid var(--border);
+}
+.wm-btns { display: flex; gap: 10px; }
+
+/* ---------- 橫置補救 ---------- */
+/* iOS Safari 無視 manifest 的 orientation:portrait，橫置擋不掉，
+   只能讓版面在橫置時仍可用：把上方的固定區塊全部壓扁，
+   把高度讓給相機預覽（橫置時預覽會被壓成一條細長條，幾乎不能拍）。 */
+@media (orientation: landscape) and (max-height: 500px) {
+  header { padding: 6px 12px; }
+  header h1 { font-size: 15px; }
+  .status-dot { font-size: 14px; }
+  .dot { width: 11px; height: 11px; }
+
+  nav.tabs button { min-height: 34px; padding: 4px 10px; font-size: 13px; }
+  nav.tabs .tab-sub { font-size: 10px; }
+
+  .target-bar { padding: 6px 12px; }
+  .target-bar .value { font-size: 13px; }
+
+  /* 控制列縮小但仍保持可按（現場可能戴手套） */
+  .cam-controls { padding: 8px 16px; }
+  .shutter { width: 52px; height: 52px; border-width: 3px; }
+  .icon-btn { width: 46px; height: 46px; font-size: 22px; }
+  .icon-btn svg { width: 22px; height: 22px; }
+
+  /* 提示使用者轉回直向會更好用 */
+  .cam-wrap::after {
+    content: '轉回直向拍攝效果較佳';
+    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,.62); color: #fff;
+    font-size: 11px; padding: 4px 10px; border-radius: 999px;
+    pointer-events: none; z-index: 6;
+  }
+}
