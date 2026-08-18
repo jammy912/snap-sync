@@ -1,5 +1,6 @@
 /* 現場拍照上傳系統 — Service Worker
- * 沿用 sample CAP/sw.js 的 stale-while-revalidate 策略，快取清單改為拆檔後的資源。
+ * 靜態資源用 stale-while-revalidate；HTML 一律 network-first
+ * （理由見下方 fetch 處理器，這是踩過的坑）。
  *
  * 重點：只處理同源 GET。對 Apps Script 的跨域請求（登入／目錄／上傳）
  * 一律不介入，直接走網路——照片上傳絕不可被快取攔截。
@@ -9,7 +10,7 @@
 
 // ⚠️ 這個版本號同時是畫面右上角顯示的版本（app.js 從 SW 取得後寫進標題）。
 // 改版時務必遞增，否則使用者會卡在舊版前端，而且看不出手機上跑的是哪一版。
-const CACHE = 'snapsync-shell-v10';
+const CACHE = 'snapsync-shell-v11';
 const ASSETS = [
   './',
   './index.html',
@@ -51,6 +52,29 @@ self.addEventListener('fetch', event => {
 
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;  // 跨域（Apps Script）不介入
+
+  // ⚠️ HTML 一律 network-first。
+  //
+  // stale-while-revalidate 對 HTML 會出事：js 更新了、index.html 還是快取的
+  // 舊版，新版 js 去取新版 HTML 才有的元素就拿到 null，整段初始化中斷。
+  // （實測：v10 加了「選取」鈕，但拿到舊 HTML 的裝置整個佇列功能失效。）
+  // HTML 很小，優先走網路的成本可以接受；離線時才退回快取。
+  const isHTML = req.mode === 'navigate' ||
+                 url.pathname === '/' ||
+                 url.pathname.endsWith('.html');
+
+  if (isHTML) {
+    event.respondWith(
+      fetch(req).then(resp => {
+        if (resp && resp.status === 200 && resp.type === 'basic') {
+          const copy = resp.clone();
+          caches.open(CACHE).then(c => c.put(req, copy));
+        }
+        return resp;
+      }).catch(() => caches.match(req).then(c => c || caches.match('./index.html')))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(req).then(cached => {

@@ -537,11 +537,15 @@ App.queue = (function () {
       // 這裡是使用者唯一能不切頁就看到「累積多少」的地方。
       var totalSize = 0;
       recs.forEach(function (r) { totalSize += r.size || 0; });
-      $('queueSub').textContent = recs.length
-        ? (recs.length + ' 張 · ' + App.util.fmtSize(totalSize))
-        : '';
+      var sub = $('queueSub');
+      if (sub) {
+        sub.textContent = recs.length
+          ? (recs.length + ' 張 · ' + App.util.fmtSize(totalSize))
+          : '';
+      }
 
       var bar = $('sendBar');
+      if (!bar) return;
       if (!recs.length) { bar.style.display = 'none'; return; }
       bar.style.display = 'flex';
 
@@ -608,15 +612,18 @@ App.queue = (function () {
 
   function updateSelectUI() {
     var n = pickedIds().length;
-    $('selectInfo').textContent = '已選 ' + n + ' 張';
-    $('deleteSelBtn').disabled = (n === 0);
+    var info = $('selectInfo');
+    var del = $('deleteSelBtn');
+    if (info) info.textContent = '已選 ' + n + ' 張';
+    if (del) del.disabled = (n === 0);
   }
 
   function enterSelect() {
     selecting = true;
     picked = {};
-    $('selectBar').style.display = 'flex';
-    $('selectModeBtn').style.display = 'none';
+    var bar = $('selectBar'), btn = $('selectModeBtn');
+    if (bar) bar.style.display = 'flex';
+    if (btn) btn.style.display = 'none';
     updateSelectUI();
     return render();
   }
@@ -624,8 +631,9 @@ App.queue = (function () {
   function exitSelect() {
     selecting = false;
     picked = {};
-    $('selectBar').style.display = 'none';
-    $('selectModeBtn').style.display = '';
+    var bar = $('selectBar'), btn = $('selectModeBtn');
+    if (bar) bar.style.display = 'none';
+    if (btn) btn.style.display = '';
     return render();
   }
 
@@ -769,11 +777,21 @@ App.queue = (function () {
       if (flushing) { cancelFlush(); } else { flush(false); }
     };
 
-    $('selectModeBtn').onclick = function () { enterSelect(); };
-    $('selectCancelBtn').onclick = function () { exitSelect(); };
-    $('deleteSelBtn').onclick = function () { deletePicked(); };
+    // ⚠️ 這裡一律用 on() 綁定，不可寫成 $('id').onclick = ...
+    //    Service Worker 是 stale-while-revalidate，js 已更新但 index.html
+    //    還是快取的舊版時，這些元素會是 null，直接設 onclick 會拋 TypeError，
+    //    使 init() 中斷、連後面的 online 監聽都綁不上，整個佇列功能失效。
+    function on(id, fn) {
+      var el = $(id);
+      if (el) { el.onclick = fn; }
+      else { console.warn('[queue] 找不到元素 ' + id + '，前端可能是舊版快取'); }
+    }
 
-    $('selectAllBtn').onclick = function () {
+    on('selectModeBtn', function () { enterSelect(); });
+    on('selectCancelBtn', function () { exitSelect(); });
+    on('deleteSelBtn', function () { deletePicked(); });
+
+    on('selectAllBtn', function () {
       App.db.all().then(function (recs) {
         // 全部已選就取消全選，否則全選——同一顆鍵兩用，省一個按鈕
         var all = recs.length > 0 && recs.every(function (r) { return picked[r.id]; });
@@ -782,7 +800,7 @@ App.queue = (function () {
         updateSelectUI();
         return render();
       });
-    };
+    });
 
     // 恢復連線：只續送【已確認】的那些；未確認的只提示，不偷跑
     //（使用者可能還在拍、或正要刪掉拍壞的那幾張）。

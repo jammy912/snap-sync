@@ -3,17 +3,24 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 
+/* 配色取自康庭環衛官網（continpco.com）：
+   主色 #39c5b3（青綠）、輔色 #0074bc（藍）、文字基準 #323232。
+   官網是淺色系，但這支 App 是現場拍照用——工地光線變化大，
+   深色背景在暗處不刺眼，相機預覽的畫面也更突出，故保留深色底，
+   只把強調色換成企業識別色。中性色一併去掉原本的紫調，改為中性灰藍，
+   否則和青綠相衝會顯得混濁。 */
 :root {
-  --bg: #12121c;
-  --panel: #1e1e2e;
-  --panel2: #28283c;
-  --accent: #4f7cff;
+  --bg: #12181c;
+  --panel: #1b242a;
+  --panel2: #243138;
+  --accent: #39c5b3;        /* 康庭主色 */
+  --accent2: #0074bc;       /* 康庭輔色，用於次要強調 */
   --danger: #e0405e;
   --ok: #2ec16e;
   --warn: #e0a33e;
-  --text: #e8e8f0;
-  --muted: #9a9ab0;
-  --border: #35354a;
+  --text: #e8eef0;
+  --muted: #93a6ad;
+  --border: #33454e;
 }
 
 html, body {
@@ -178,6 +185,16 @@ nav.tabs .tab-sub:empty { display: none; }
   color: var(--text); font-size: 28px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
+/* 線條圖示：統一描邊寬度與圓端點，風格對齊康庭官網的圖示字型。
+   fill:none + stroke:currentColor 讓圖示跟著按鈕文字色，
+   停用或改主色時不必另外處理。 */
+.icon-btn svg { width: 28px; height: 28px; display: block; }
+.icon-btn svg path, .icon-btn svg circle, .icon-btn svg rect, .icon-btn svg line {
+  fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* 開啟相機是主要動作，用主色點出來 */
+#startCamBtn { color: var(--accent); border-color: var(--accent); }
 
 /* ---------- 目錄樹 ---------- */
 /* 目錄選擇浮層（由下滑出，取代原本的「目錄」分頁） */

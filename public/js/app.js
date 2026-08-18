@@ -11,7 +11,7 @@ App.app = (function () {
   // ⚠️ 改版時要跟 sw.js 的 CACHE 版本號一起遞增，兩者必須一致。
   // 顯示在標題右側，讓現場回報問題時能直接確認手機上跑的是哪一版——
   // PWA 會快取前端資源，「我已經部署了」不等於「使用者拿到了」。
-  var VERSION = 'v10';
+  var VERSION = 'v11';
 
   var SETTINGS_KEY = 'ss_settings';
   var settings = { maxEdge: 1600, quality: 0.7 };   // 規劃書建議值

@@ -77,12 +77,28 @@
          用 grid 而非 flex 置中，右欄按鈕數量變動時快門才不會跟著偏移。 -->
     <div class="cam-controls">
       <div class="ctl-side left">
-        <button class="icon-btn" id="pickDirBtn" title="選擇上傳目錄">📁</button>
+        <!-- 線條圖示（風格對齊康庭官網的 fontello 圖示字型）。
+             用 currentColor 描邊，才能跟著按鈕狀態與主色變化。 -->
+        <button class="icon-btn" id="pickDirBtn" title="選擇上傳目錄" aria-label="選擇上傳目錄">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 7.5A1.5 1.5 0 0 1 4.5 6h4l2 2.5h7A1.5 1.5 0 0 1 19 10v7a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 3 17z"/>
+          </svg>
+        </button>
       </div>
       <button class="shutter" id="shutterBtn" disabled></button>
       <div class="ctl-side right">
-        <button class="icon-btn" id="switchBtn" title="切換鏡頭" style="display:none">🔄</button>
-        <button class="icon-btn" id="startCamBtn" title="開啟相機">📷</button>
+        <button class="icon-btn" id="switchBtn" title="切換鏡頭" aria-label="切換鏡頭" style="display:none">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 11a8 8 0 0 0-13.9-5.4M4 13a8 8 0 0 0 13.9 5.4"/>
+            <path d="M20 5v6h-6M4 19v-6h6"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="startCamBtn" title="開啟相機" aria-label="開啟相機">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.7l1.4-2h6.8l1.4 2h2.7A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>
+            <circle cx="12" cy="12.8" r="3.4"/>
+          </svg>
+        </button>
       </div>
     </div>
   </section>
