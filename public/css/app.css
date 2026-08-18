@@ -24,11 +24,23 @@
 }
 
 html, body {
+  /* dvh 會扣掉 iOS 動態工具列的高度；100% 在 Safari 上算不準，
+     加上雙擊縮放後整個版面會被往上推、標題與分頁列跑出畫面外。
+     先寫 100% 再寫 100dvh：不支援 dvh 的舊瀏覽器會忽略後者，退回 100%。 */
   height: 100%;
+  height: 100dvh;
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
   overscroll-behavior: none;
+  /* 整個 App 是固定版面（各區塊自己捲），body 本身不該滾動 */
+  overflow: hidden;
+  position: fixed; inset: 0;
+  /* ⚠️ iOS 10 起 Safari 刻意忽略 user-scalable=no（無障礙考量），
+     雙擊仍會縮放並把版面推走。touch-action 才是真正擋得住的方式。
+     manipulation = 保留單擊與捲動，但停用雙擊縮放。 */
+  touch-action: manipulation;
+  -webkit-text-size-adjust: 100%;   /* 橫置時 Safari 不要自作主張放大字級 */
 }
 body { display: flex; flex-direction: column; }
 
@@ -55,7 +67,9 @@ header h1 { font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: 
 .status-dot.is-online { color: var(--ok); }
 .status-dot.is-offline { color: var(--danger); }
 
-main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* min-height:0 是關鍵：flex 子元素預設 min-height:auto，內容一長就把
+   容器撐開，導致相機控制列被擠出畫面外（下方會出現一塊空白）。 */
+main { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 
 /* ---------- Tabs ---------- */
 nav.tabs { display: flex; background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
@@ -111,7 +125,9 @@ nav.tabs .tab-sub:empty { display: none; }
 .btn-block { width: 100%; flex: none; }
 
 /* ---------- 拍照 ---------- */
-#cameraView { display: none; flex-direction: column; height: 100%; }
+/* 相機頁是固定版面：預覽區吸收剩餘高度，控制列永遠貼在底部。
+   overflow:hidden 讓它不會被捲動——一捲動快門就跑出畫面外。 */
+#cameraView { display: none; flex-direction: column; height: 100%; overflow: hidden; }
 #cameraView.active { display: flex; }
 
 /* 整條是按鈕，點任何位置都能開目錄浮層（現場戴手套也好按） */
@@ -147,7 +163,10 @@ nav.tabs .tab-sub:empty { display: none; }
 .cam-wrap {
   position: relative; flex: 1; background: #000;
   display: flex; align-items: center; justify-content: center;
-  overflow: hidden; min-height: 240px;
+  /* ⚠️ 不可設 min-height：畫面不夠高時它會撐開容器，把下方的相機控制列
+     整條擠出視窗外（症狀是控制列下方多一塊空白、快門按不到）。
+     min-height:0 讓預覽區乖乖吸收剩餘空間即可。 */
+  overflow: hidden; min-height: 0;
 }
 #video { width: 100%; height: 100%; object-fit: cover; }
 #camPlaceholder { color: var(--muted); text-align: center; padding: 40px; font-size: 15px; line-height: 1.7; }

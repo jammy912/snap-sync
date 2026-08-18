@@ -122,6 +122,39 @@ App.app = (function () {
     };
   }
 
+  /**
+   * 擋掉 iOS Safari 的雙擊縮放與雙指縮放。
+   *
+   * iOS 10 起 Safari 刻意忽略 <meta viewport> 的 user-scalable=no（無障礙
+   * 考量），雙擊仍會放大並把整個版面往上推——標題列、分頁列、「上傳至」列
+   * 全部跑出畫面外，下方多出一塊空白（現場實際回報）。
+   *
+   * CSS 的 touch-action: manipulation 擋得掉大部分情況，但部分 iOS 版本
+   * 仍會觸發，故這裡再補一道：偵測 300ms 內的第二次點擊就攔下來。
+   * gesturestart 則是擋雙指縮放（Safari 專有事件）。
+   */
+  function preventZoom() {
+    var lastTouch = 0;
+    document.addEventListener('touchend', function (e) {
+      var now = Date.now();
+      if (now - lastTouch <= 300) {
+        // ⚠️ 只擋非互動元素上的雙擊。
+        //    無條件 preventDefault 會連快門、按鈕的第二次點擊一起吃掉，
+        //    使用者快速連拍時第二張就按不出來。
+        var t = e.target;
+        var interactive = t && t.closest &&
+          t.closest('button, a, input, select, textarea, .thumb, .tree-node');
+        if (!interactive) { e.preventDefault(); }
+      }
+      lastTouch = now;
+    }, { passive: false });
+
+    // 雙指縮放（iOS Safari 專有事件，其他瀏覽器不會觸發）
+    ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (evt) {
+      document.addEventListener(evt, function (e) { e.preventDefault(); });
+    });
+  }
+
   function registerSW() {
     if (!('serviceWorker' in navigator)) return;
     if (location.protocol === 'file:') return;
@@ -137,6 +170,7 @@ App.app = (function () {
     loadSettings();
     updateNet();
     registerSW();
+    preventZoom();
     initInstall();
 
     App.auth.init();
