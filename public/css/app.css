@@ -15,12 +15,16 @@
   --panel2: #243138;
   --accent: #39c5b3;        /* 康庭主色 */
   --accent2: #0074bc;       /* 康庭輔色，用於次要強調 */
+  /* 主色在深底上當文字偏暗，文字與圖示用這個加亮版本 */
+  --accent-bright: #5fe0ce;
   --danger: #e0405e;
   --ok: #2ec16e;
   --warn: #e0a33e;
-  --text: #e8eef0;
-  --muted: #93a6ad;
-  --border: #33454e;
+  --text: #eef4f6;
+  /* 提高與深底的對比：原本 #93a6ad 在戶外強光下幾乎與背景融在一起，
+     目錄樹的分枝層級難以辨讀（現場回報）。 */
+  --muted: #b0c4cc;
+  --border: #3d525c;
 }
 
 html, body {
@@ -81,7 +85,7 @@ nav.tabs button {
   /* 副標可能有無切換，固定高度避免分頁列跟著抖動 */
   min-height: 48px; justify-content: center;
 }
-nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+nav.tabs button.active { color: var(--accent-bright); border-bottom-color: var(--accent); }
 /* 待上傳張數與容量：拍照時不必切分頁就看得到累積了多少 */
 nav.tabs .tab-sub { font-size: 11px; font-weight: 400; color: var(--muted); line-height: 1; }
 nav.tabs .tab-sub:empty { display: none; }
@@ -213,7 +217,7 @@ nav.tabs .tab-sub:empty { display: none; }
   stroke-linecap: round; stroke-linejoin: round;
 }
 /* 開啟相機是主要動作，用主色點出來 */
-#startCamBtn { color: var(--accent); border-color: var(--accent); }
+#startCamBtn { color: var(--accent-bright); border-color: var(--accent); }
 
 /* ---------- 目錄樹 ---------- */
 /* 目錄選擇浮層（由下滑出，取代原本的「目錄」分頁） */
@@ -266,7 +270,7 @@ nav.tabs .tab-sub:empty { display: none; }
   color: var(--text); font-size: 13px; cursor: pointer; max-width: 200px;
   overflow: hidden; text-overflow: ellipsis;
 }
-.recent-chip.active { background: rgba(79,124,255,.18); border-color: var(--accent); }
+.recent-chip.active { background: rgba(57,197,179,.22); border-color: var(--accent); color: var(--accent-bright); }
 
 .tree-node { user-select: none; }
 .tree-row {
@@ -275,11 +279,31 @@ nav.tabs .tab-sub:empty { display: none; }
   border: 1px solid transparent;
 }
 .tree-row:active { background: var(--panel2); }
-.tree-row.selected { background: rgba(57,197,179,.18); border-color: var(--accent); }
-/* 分枝節點（底下還有子目錄）不能當上傳目標，點了只是展開。
-   用次要色與較細的字重跟葉節點區隔，讓「哪些能選」一眼看得出來。 */
+/* 選中的要和其他葉節點明顯有別：底色更濃、邊框主色、文字也用亮青綠。
+   只差一點點底色的話，在戶外強光下根本分不出來。 */
+.tree-row.selected {
+  background: rgba(57,197,179,.28);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.tree-row.selected .tree-name { color: var(--accent-bright); }
+/* 選中的葉節點左側標記加粗，掃視時定位得更快 */
+.tree-row.selected::before { width: 5px; }
+
+/* 【可選與否要用不只一種線索】
+   只靠文字深淺，在戶外強光的手機螢幕上分不出來（現場回報「顏色跟背景同色」）。
+   分枝＝純文字、次要色；葉節點＝有底色與邊框，看起來就是個可點的項目。 */
 .tree-row.branch .tree-name { color: var(--muted); font-weight: 400; }
-.tree-row:not(.branch) .tree-name { color: var(--text); font-weight: 500; }
+.tree-row:not(.branch) {
+  background: var(--panel2); border-color: var(--border);
+  margin: 3px 0;
+}
+.tree-row:not(.branch) .tree-name { color: var(--text); font-weight: 600; }
+/* 葉節點左側加一條主色標記，掃視時一眼看出「這些才能選」 */
+.tree-row:not(.branch)::before {
+  content: ''; width: 3px; align-self: stretch; flex-shrink: 0;
+  background: var(--accent); border-radius: 2px; margin-right: 2px;
+}
 .tree-toggle {
   width: 22px; height: 22px; flex-shrink: 0; display: flex;
   align-items: center; justify-content: center; color: var(--muted); font-size: 12px;
@@ -287,7 +311,7 @@ nav.tabs .tab-sub:empty { display: none; }
 .tree-toggle.leaf { visibility: hidden; }
 .tree-name { flex: 1; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* 該目錄底下待上傳的張數。放在名稱右側，不參與 ellipsis 壓縮 */
-.tree-count { flex-shrink: 0; font-size: 12px; color: var(--accent); font-variant-numeric: tabular-nums; }
+.tree-count { flex-shrink: 0; font-size: 12px; color: var(--accent-bright); font-variant-numeric: tabular-nums; }
 .tree-children { margin-left: 18px; border-left: 1px solid var(--border); padding-left: 4px; }
 .tree-children.collapsed { display: none; }
 
