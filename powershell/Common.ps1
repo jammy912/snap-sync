@@ -618,3 +618,171 @@ function Invoke-SnapSyncApi {
     }
     return $resp
 }
+
+# =====================================================================
+# 照片浮水印
+#
+# 工程資訊寫在該目錄的 .snapsync 標記檔裡，落地時壓在照片左下角。
+#
+# ⚠️ 實際內容含客戶資料（施工單位、地址），一律只放在現場的 .snapsync
+#    檔案裡，不得寫進本專案任何檔案——.snapsync 位於來源目錄，不進 git。
+#
+# 格式為每行一個「欄位:值」，例如（以下為示意，非真實資料）：
+#     時　　間:YYYY.MM.DD Ddd
+#     工程名稱:○○○
+#     施工單位:○○○
+#     施工地址:○○○
+#
+# 內容原樣顯示（含用於對齊的全形空白），不做解析或重新排版——
+# 現場人員怎麼寫就怎麼呈現，要調整對齊自己改檔案即可。
+# 檔案不存在或內容為空就不壓浮水印。
+# =====================================================================
+
+<#
+.SYNOPSIS
+  讀取目錄中 .snapsync 的浮水印文字；沒有內容則回傳 $null。
+
+.PARAMETER Dir
+  照片要落地的目錄。標記檔就在這個目錄裡。
+#>
+function Get-WatermarkText {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string] $Dir,
+        [string] $MarkerName = '.snapsync'
+    )
+
+    $marker = Join-Path $Dir $MarkerName
+    if (-not (Test-Path -LiteralPath $marker)) { return $null }
+
+    try {
+        # 標記檔多半由現場人員用記事本建立，可能是 UTF-8（有無 BOM）或 ANSI。
+        # 先讀 UTF-8；若出現替換字元（U+FFFD）代表解碼失敗，再退回系統預設編碼。
+        $text = [IO.File]::ReadAllText($marker, [Text.Encoding]::UTF8)
+        if ($text -match "�") {
+            $text = [IO.File]::ReadAllText($marker, [Text.Encoding]::Default)
+        }
+    }
+    catch { return $null }
+
+    if ([string]::IsNullOrWhiteSpace($text)) { return $null }
+
+    # 去掉空行與前後空白，但保留行內用於對齊的空白
+    $lines = @($text -split "`r?`n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+               ForEach-Object { $_.TrimEnd() })
+    if ($lines.Count -eq 0) { return $null }
+
+    return ($lines -join "`n")
+}
+
+<#
+.SYNOPSIS
+  在 JPEG 左下角壓上多行浮水印文字。就地覆寫原檔。
+
+.DESCRIPTION
+  用 System.Drawing 繪製。字級依照片長邊換算，不同解析度下比例才一致；
+  半透明黑底條確保在淺色地面、強光牆面上都讀得到。
+
+  ⚠️ 必須在 MD5 校驗鏈全部通過之後才呼叫——壓字會改變檔案內容，
+     先壓的話落地校驗一定失敗。
+
+.OUTPUTS
+  成功回傳 $true；失敗回傳 $false（原檔不動，呼叫端仍視為落地成功）。
+#>
+function Add-PhotoWatermark {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string] $Path,
+        [Parameter(Mandatory)][string] $Text,
+        [string] $LogFile
+    )
+
+    $img = $null; $bmp = $null; $g = $null; $font = $null
+    $tmp = "$Path.wm"
+
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+
+        # 讀進記憶體再關檔：直接用 FromFile 會鎖住檔案，之後無法覆寫原檔
+        $raw = [IO.File]::ReadAllBytes($Path)
+        $ms = New-Object IO.MemoryStream(,$raw)
+        $img = [Drawing.Image]::FromStream($ms)
+
+        $w = $img.Width; $h = $img.Height
+        $bmp = New-Object Drawing.Bitmap($w, $h)
+        $bmp.SetResolution($img.HorizontalResolution, $img.VerticalResolution)
+
+        $g = [Drawing.Graphics]::FromImage($bmp)
+        $g.SmoothingMode = [Drawing.Drawing2D.SmoothingMode]::AntiAlias
+        $g.TextRenderingHint = [Drawing.Text.TextRenderingHint]::AntiAliasGridFit
+        $g.DrawImage($img, 0, 0, $w, $h)
+
+        # 字級取長邊的 2.6%，下限 12px（小圖也要看得到）
+        $fontSize = [Math]::Max(12, [int]([Math]::Max($w, $h) * 0.026))
+        # 微軟正黑體：Windows 內建且支援繁體中文。缺字時 GDI+ 會自動替代
+        $font = New-Object Drawing.Font('Microsoft JhengHei', $fontSize, [Drawing.FontStyle]::Bold, [Drawing.GraphicsUnit]::Pixel)
+
+        $lines = @($Text -split "`n")
+        $pad = [int]($fontSize * 0.6)
+        $lineH = [int]($fontSize * 1.45)
+
+        # 量出最寬的一行，底條才知道要多寬
+        $maxW = 0
+        foreach ($ln in $lines) {
+            $sz = $g.MeasureString($ln, $font)
+            if ($sz.Width -gt $maxW) { $maxW = $sz.Width }
+        }
+
+        $boxW = [int]($maxW + $pad * 2)
+        $boxH = [int]($lines.Count * $lineH + $pad * 2)
+        $boxX = 0
+        $boxY = $h - $boxH
+
+        # 半透明黑底：純文字在淺色地面上會看不見
+        $brushBg = New-Object Drawing.SolidBrush([Drawing.Color]::FromArgb(140, 0, 0, 0))
+        $g.FillRectangle($brushBg, $boxX, $boxY, $boxW, $boxH)
+        $brushBg.Dispose()
+
+        $brushFg = New-Object Drawing.SolidBrush([Drawing.Color]::White)
+        $y = $boxY + $pad
+        foreach ($ln in $lines) {
+            $g.DrawString($ln, $font, $brushFg, [single]($boxX + $pad), [single]$y)
+            $y += $lineH
+        }
+        $brushFg.Dispose()
+
+        # 以 JPEG 品質 92 存出：太低會讓浮水印文字邊緣糊掉
+        $codec = [Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() |
+                 Where-Object { $_.MimeType -eq 'image/jpeg' } | Select-Object -First 1
+        $encParams = New-Object Drawing.Imaging.EncoderParameters(1)
+        $encParams.Param[0] = New-Object Drawing.Imaging.EncoderParameter(
+            [Drawing.Imaging.Encoder]::Quality, [int64]92)
+
+        # 先寫暫存再改名：中途失敗不會留下半截檔案
+        $bmp.Save($tmp, $codec, $encParams)
+        $encParams.Dispose()
+
+        # 釋放後才能覆寫原檔
+        $g.Dispose(); $g = $null
+        $bmp.Dispose(); $bmp = $null
+        $img.Dispose(); $img = $null
+        $ms.Dispose()
+
+        Move-Item -LiteralPath $tmp -Destination $Path -Force
+        return $true
+    }
+    catch {
+        if ($LogFile) {
+            Write-Log -Message ("壓浮水印失敗（原檔保留，不影響落地）：{0}" -f $_.Exception.Message) `
+                -Level 'WARN' -LogFile $LogFile
+        }
+        return $false
+    }
+    finally {
+        if ($g)   { $g.Dispose() }
+        if ($bmp) { $bmp.Dispose() }
+        if ($img) { $img.Dispose() }
+        if ($font){ $font.Dispose() }
+        if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+    }
+}

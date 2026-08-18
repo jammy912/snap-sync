@@ -186,6 +186,21 @@ try {
             }
             Write-Log -Message "  校驗通過 md5=$diskMd5（上傳→雲端→下載→磁碟 四段一致）" -LogFile $LogFile
 
+            # --- 4c. 壓浮水印（該目錄的 .snapsync 有內容才壓）---
+            #
+            # ⚠️ 一定要放在 MD5 校驗鏈【全部通過之後】。
+            #    壓字會改變檔案內容，先壓的話落地校驗必然失敗——
+            #    校驗鏈保護的是「下載的原始內容正確」，浮水印是之後的加工。
+            #
+            # 壓字失敗不影響落地結果：照片已經正確寫入磁碟並驗證過了，
+            # 缺浮水印是可補的，為此把照片留在雲端重試反而增加風險。
+            $wmText = Get-WatermarkText -Dir $fullTargetDir
+            if ($wmText) {
+                if (Add-PhotoWatermark -Path $destPath -Text $wmText -LogFile $LogFile) {
+                    Write-Log -Message "  已壓浮水印（$($wmText -split "`n" | Measure-Object | Select-Object -ExpandProperty Count) 行）" -LogFile $LogFile
+                }
+            }
+
             # --- 5. 驗證通過，才 ack（永久刪雲端）---
             $ack = Invoke-SnapSyncApi -Endpoint $cfg.Endpoint -Method 'POST' -Payload @{
                 action = 'ack'

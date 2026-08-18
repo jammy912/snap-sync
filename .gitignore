@@ -24,3 +24,8 @@ desktop.ini
 # PowerShell 執行記錄
 powershell/logs/
 *.log
+
+# 現場標記檔：內容含客戶資料（施工單位、地址），絕不可進 git。
+# 正常情況下它位於來源照片目錄，不在本專案內；這裡只是保險。
+.snapsync
+**/.snapsync
