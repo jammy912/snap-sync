@@ -11,7 +11,7 @@ App.app = (function () {
   // ⚠️ 改版時要跟 sw.js 的 CACHE 版本號一起遞增，兩者必須一致。
   // 顯示在標題右側，讓現場回報問題時能直接確認手機上跑的是哪一版——
   // PWA 會快取前端資源，「我已經部署了」不等於「使用者拿到了」。
-  var VERSION = 'v8';
+  var VERSION = 'v9';
 
   var SETTINGS_KEY = 'ss_settings';
   var settings = { maxEdge: 1600, quality: 0.7 };   // 規劃書建議值
@@ -48,6 +48,10 @@ App.app = (function () {
 
     // 切分頁時關掉目錄浮層，避免它蓋在別的分頁上
     App.tree.closeSheet();
+
+    // 離開佇列時退出選取模式，否則回來時還停在選取狀態、
+    // 勾選的又是上次的那批，容易誤刪
+    if (tab !== 'queue' && App.queue.isSelecting()) { App.queue.exitSelect(); }
 
     if (tab === 'queue') App.queue.render();
   }

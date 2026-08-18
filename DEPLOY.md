@@ -15,7 +15,7 @@
 | Apps Script `/exec` | `https://script.google.com/macros/s/AKfycbxCRp-UKKV4V.../exec` |
 | Sheet ID | `11Bin-iFxlGdb8uj2iDed0fJlZBwrqr4BYECKaJsKvTM` |
 | Drive 暫存夾 ID | `1q9dk4g1Szsjs5sP3avpIaOe-1PvFlS40` |
-| GitHub | https://github.com/jammy912/snap-sync |
+
 
 `ADMIN_TOKEN` 只存在於 Apps Script 指令碼屬性與內部 `powershell/config.json`，
 **不記錄在此文件、不進 repo**。

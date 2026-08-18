@@ -92,7 +92,15 @@
     <div class="toolbar">
       <span id="queueInfo">—</span>
       <span class="spacer"></span>
+      <button class="mini-btn" id="selectModeBtn">選取</button>
       <button class="mini-btn" id="retryAllBtn">立即重送</button>
+    </div>
+    <!-- 多選模式的操作列：只在選取模式下顯示 -->
+    <div class="toolbar select-bar" id="selectBar" style="display:none">
+      <button class="mini-btn" id="selectAllBtn">全選</button>
+      <span class="spacer" id="selectInfo">已選 0 張</span>
+      <button class="mini-btn mini-danger" id="deleteSelBtn" disabled>刪除</button>
+      <button class="mini-btn" id="selectCancelBtn">取消</button>
     </div>
     <div class="gallery-grid" id="grid"></div>
     <div class="empty" id="queueEmpty" style="display:none">

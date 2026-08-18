@@ -18,6 +18,15 @@ App.queue = (function () {
   var flushing = false;
   var objectURLs = [];
 
+  // 使用者按下「取消傳送」時設為 true，送完當前這張就停手。
+  // 不中斷進行中的那一張——HTTP 請求已經送出，強行放棄只會讓伺服器
+  // 收到照片但本機不知道，下次重送要靠冪等去重，多繞一圈。
+  var cancelRequested = false;
+
+  // 多選刪除用。只在選取模式有效，離開選取模式就清空。
+  var selecting = false;
+  var picked = {};        // { id: true }
+
   // 放大檢視用。刻意與 objectURLs 分開管理——render() 會 revoke 掉整批縮圖
   // 的 URL，共用的話上傳完成重繪時，正在看的那張會變成破圖。
   var viewList = [];      // 目前檢視序列（與畫面排序一致）
@@ -158,7 +167,8 @@ App.queue = (function () {
     if (manual && retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
 
     flushing = true;
-    var ok = 0, fail = 0, authFailed = false;
+    cancelRequested = false;      // 每次開始傳送都重置，否則上一輪的取消會殘留
+    var ok = 0, fail = 0, authFailed = false, cancelled = false;
 
     // 手動按傳送：先把「目前佇列裡的照片」逐筆標記為已確認。
     // 標記完才開始送，因此標記之後才拍的照片不在這一批裡，
@@ -206,6 +216,8 @@ App.queue = (function () {
       return pending.reduce(function (chain, rec) {
         return chain.then(function () {
           if (authFailed) return;
+          // 使用者按了取消：停止送出後面的，已送出的不受影響
+          if (cancelRequested) { cancelled = true; return; }
           return uploadOne(rec).then(function () {
             ok++;
             return tick();           // 這張已送出，立刻讓計數往下跳
@@ -234,6 +246,16 @@ App.queue = (function () {
         });
       }, Promise.resolve());
     }).then(function () {
+      if (cancelled) {
+        // 取消後剩下的仍是「已確認」狀態，會由自動重送接手繼續送。
+        // 這點必須講明白，否則使用者以為按了取消就不會再送了。
+        return App.db.all().then(function (recs) {
+          var left = pendingOf(recs).filter(isConfirmed).length;
+          toast('已停止傳送：完成 ' + ok + ' 張'
+            + (left ? '，剩 ' + left + ' 張仍會自動重送（要完全停止請直接刪除）' : ''));
+          return tick();
+        });
+      }
       if (!(ok || fail)) return tick();
       if (silent && !fail) return tick();
 
@@ -252,7 +274,10 @@ App.queue = (function () {
       // 先解鎖再更新畫面，否則「傳送」鍵會停在 disabled
       // （refreshBadge 是依 flushing 決定按鈕狀態的）
       flushing = false;
-      // 還有沒送掉的就排下一輪；全部送完 scheduleRetry 會自行關掉旗標
+      cancelRequested = false;
+      // 還有沒送掉的就排下一輪；全部送完 scheduleRetry 會自行關掉旗標。
+      // 取消後仍要排——剩下的是已確認的照片，本來就該繼續送，
+      // 只是不再佔用使用者當下的操作（退避間隔至少 5 秒）。
       scheduleRetry();
       return tick();
     });
@@ -268,6 +293,7 @@ App.queue = (function () {
       var grid = $('grid');
       revokeURLs();
       grid.innerHTML = '';
+      grid.classList.toggle('selecting', selecting);
 
       recs.sort(function (a, b) {
         return new Date(b.capturedAt) - new Date(a.capturedAt);
@@ -335,12 +361,35 @@ App.queue = (function () {
         div.appendChild(badge);
         div.appendChild(meta);
 
-        div.onclick = function () { openViewer(r.id); };
+        if (selecting) {
+          var isPicked = !!picked[r.id];
+          if (isPicked) div.classList.add('picked');
+          var pick = document.createElement('div');
+          pick.className = 'pick';
+          pick.textContent = isPicked ? '✓' : '';
+          div.appendChild(pick);
+          // 選取模式下點縮圖是勾選，不開放大檢視
+          div.onclick = function () { togglePick(r.id); };
+        } else {
+          div.onclick = function () { openViewer(r.id); };
+        }
         grid.appendChild(div);
       });
 
       // 放大檢視的序列沿用畫面排序，左右切換才跟看到的順序一致
       viewList = recs.map(function (r) { return r.id; });
+
+      // 清掉已不存在的勾選（照片可能在別處被刪、或上傳成功而移除），
+      // 否則刪除鍵的計數會比畫面上看到的多。
+      if (selecting) {
+        var alive = {};
+        recs.forEach(function (r) { alive[r.id] = true; });
+        var changed = false;
+        Object.keys(picked).forEach(function (id) {
+          if (!alive[id]) { delete picked[id]; changed = true; }
+        });
+        if (changed) updateSelectUI();
+      }
 
       $('queueInfo').textContent = recs.length
         ? (recs.length + ' 張待上傳 · ' + App.util.fmtSize(totalSize))
@@ -489,11 +538,18 @@ App.queue = (function () {
       var btn = $('sendNowBtn');
 
       if (flushing) {
-        // 傳送中：按鈕停用，並明講新拍的要等這批完成再確認
-        $('sendInfo').textContent = '傳送中… 剩 ' + sending.length + ' 張'
-          + (waiting.length ? '，' + waiting.length + ' 張待這批完成後確認' : '');
-        btn.disabled = true;
-        btn.textContent = '傳送中…';
+        // 傳送中：按鈕變成「取消傳送」，讓使用者能中途停手
+        //（例如選錯目錄、或臨時要先傳別批）。
+        if (cancelRequested) {
+          $('sendInfo').textContent = '停止中… 送完目前這張就停';
+          btn.disabled = true;
+          btn.textContent = '停止中…';
+        } else {
+          $('sendInfo').textContent = '傳送中… 剩 ' + sending.length + ' 張'
+            + (waiting.length ? '，' + waiting.length + ' 張待這批完成後確認' : '');
+          btn.disabled = false;
+          btn.textContent = '取消傳送';
+        }
         return;
       }
 
@@ -512,10 +568,105 @@ App.queue = (function () {
     });
   }
 
+  /* ---------- 取消傳送 ---------- */
+
+  /**
+   * 請求停止傳送。
+   *
+   * 不中斷進行中的那一張：HTTP 請求已經送出，強行放棄只會變成
+   * 「伺服器收到了但本機不知道」，下次重送得靠冪等去重，白繞一圈。
+   * 因此送完當前這張就停，剩下的交給自動重送。
+   */
+  function cancelFlush() {
+    if (!flushing || cancelRequested) return;
+    cancelRequested = true;
+    toast('送完目前這張就停止');
+    refreshBadge();
+  }
+
+  /* ---------- 多選刪除 ---------- */
+
+  function pickedIds() { return Object.keys(picked); }
+
+  function updateSelectUI() {
+    var n = pickedIds().length;
+    $('selectInfo').textContent = '已選 ' + n + ' 張';
+    $('deleteSelBtn').disabled = (n === 0);
+  }
+
+  function enterSelect() {
+    selecting = true;
+    picked = {};
+    $('selectBar').style.display = 'flex';
+    $('selectModeBtn').style.display = 'none';
+    updateSelectUI();
+    return render();
+  }
+
+  function exitSelect() {
+    selecting = false;
+    picked = {};
+    $('selectBar').style.display = 'none';
+    $('selectModeBtn').style.display = '';
+    return render();
+  }
+
+  function togglePick(id) {
+    if (picked[id]) { delete picked[id]; } else { picked[id] = true; }
+    updateSelectUI();
+    return render();
+  }
+
+  /** 刪除所有勾選的照片。刪除不可逆，一律先確認。 */
+  function deletePicked() {
+    var ids = pickedIds();
+    if (!ids.length) return Promise.resolve();
+
+    // 傳送中不給刪：正在送的那張刪掉會讓 uploadOne 拿到已失效的記錄。
+    if (flushing) {
+      toast('傳送中無法刪除，請先按「取消傳送」');
+      return Promise.resolve();
+    }
+
+    if (!confirm('確定刪除選取的 ' + ids.length + ' 張照片？\n照片只存在這支手機，刪除後無法復原。')) {
+      return Promise.resolve();
+    }
+
+    return ids.reduce(function (chain, id) {
+      return chain.then(function () { return App.db.remove(id); });
+    }, Promise.resolve()).then(function () {
+      toast('已刪除 ' + ids.length + ' 張');
+      return exitSelect();
+    }).then(function () {
+      return App.tree.refreshCounts().then(App.tree.render);
+    }).then(tick).catch(function (e) {
+      toast('刪除失敗：' + e.message);
+    });
+  }
+
   function init() {
     initViewer();
     $('retryAllBtn').onclick = function () { flush(false); };
-    $('sendNowBtn').onclick = function () { flush(false); };
+
+    // 同一顆按鈕兩種行為：閒置時送出、傳送中則取消
+    $('sendNowBtn').onclick = function () {
+      if (flushing) { cancelFlush(); } else { flush(false); }
+    };
+
+    $('selectModeBtn').onclick = function () { enterSelect(); };
+    $('selectCancelBtn').onclick = function () { exitSelect(); };
+    $('deleteSelBtn').onclick = function () { deletePicked(); };
+
+    $('selectAllBtn').onclick = function () {
+      App.db.all().then(function (recs) {
+        // 全部已選就取消全選，否則全選——同一顆鍵兩用，省一個按鈕
+        var all = recs.length > 0 && recs.every(function (r) { return picked[r.id]; });
+        picked = {};
+        if (!all) { recs.forEach(function (r) { picked[r.id] = true; }); }
+        updateSelectUI();
+        return render();
+      });
+    };
 
     // 恢復連線：只續送【已確認】的那些；未確認的只提示，不偷跑
     //（使用者可能還在拍、或正要刪掉拍壞的那幾張）。
@@ -544,6 +695,7 @@ App.queue = (function () {
 
   return {
     init: init, flush: flush, render: render, refreshBadge: refreshBadge,
-    resumeAutoRetry: resumeAutoRetry, unconfirmAll: unconfirmAll
+    resumeAutoRetry: resumeAutoRetry, unconfirmAll: unconfirmAll,
+    exitSelect: exitSelect, isSelecting: function () { return selecting; }
   };
 })();
