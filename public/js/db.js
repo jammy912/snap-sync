@@ -90,7 +90,34 @@ App.db = (function () {
       req.onsuccess = function () {
         var cur = req.result;
         if (!cur) { res(false); return; }        // 已被刪除，不重建
-        Object.keys(fields).forEach(function (k) { cur[k] = fields[k]; });
+
+        // ⚠️ 用 cursor 更新，不可用 store.put(cur)。
+        //
+        // put(cur) 會把【整筆記錄】重寫一次，包含 blob。iOS Safari 對
+        // 「讀出來再寫回去」的 blob 會產生一個暫時失效的參照——緊接著
+        // 用它上傳就會拋「Error preparing Blob/File data...」，但下一輪
+        // 重讀又是好的。症狀是【第一次傳送必失敗、重試後正常】：
+        // 按下傳送時 prepare 會逐筆 patch(confirmed:true)，blob 就在
+        // 這一刻被寫壞，然後立刻拿去上傳。
+        //
+        // 兩道防護：
+        // 1. 值沒變就完全不寫，blob 不受影響
+        var changed = false;
+        Object.keys(fields).forEach(function (k) {
+          if (cur[k] !== fields[k]) { cur[k] = fields[k]; changed = true; }
+        });
+        if (!changed) { res(true); return; }
+
+        // 2. 真的要寫時，用同型別重新包一個 Blob 再寫回。
+        //    重新建構會切斷「讀出來的那個參照」，寫進去的是一份乾淨的資料，
+        //    後續讀取就不會拿到失效參照。成本是一次記憶體複製，
+        //    但照片已壓縮過（數百 KB），代價遠低於整批傳送失敗。
+        if (cur.blob instanceof Blob) {
+          try {
+            cur.blob = new Blob([cur.blob], { type: cur.blob.type || 'image/jpeg' });
+          } catch (e) { /* 重建失敗就用原本的，至少不比現在差 */ }
+        }
+
         store.put(cur);
       };
       t.oncomplete = function () { res(true); };

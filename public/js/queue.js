@@ -185,6 +185,45 @@ App.queue = (function () {
    * 使用者看不出到底有沒有在動（實際回報過的狀況）。
    * 佇列分頁沒開著時只更新數字徽章，省下重繪縮圖的成本。
    */
+  /**
+   * 把已送出的那一張從畫面上移除。
+   *
+   * 傳送過程中不重繪整個 grid——重繪要撤銷並重建所有 objectURL，
+   * 密集呼叫時多次 render 會互相踩到彼此的 URL（見 render 的說明）。
+   * 但完全不動畫面又會讓照片「整批傳完才一次消失」，過程中毫無進度感。
+   *
+   * 折衷：只把送掉的那一格抽掉，其餘的 DOM 與 URL 完全不動。
+   */
+  function removeThumb(id) {
+    var grid = $('grid');
+    if (!grid) return;
+    var div = grid.querySelector('.thumb[data-id="' + id + '"]');
+    if (!div) return;
+
+    // 淡出後移除，讓使用者看得出「這張送掉了」而不是憑空消失
+    div.classList.add('sent-out');
+    setTimeout(function () {
+      if (div.parentNode) { div.parentNode.removeChild(div); }
+      // 全部送完時把空狀態叫出來
+      if (!grid.children.length) {
+        var empty = $('queueEmpty');
+        if (empty) empty.style.display = 'block';
+      }
+    }, 260);
+  }
+
+  /** 就地更新某一張的重試次數徽章，不重繪整個 grid */
+  function updateThumbBadge(id, retryCount) {
+    var grid = $('grid');
+    if (!grid) return;
+    var div = grid.querySelector('.thumb[data-id="' + id + '"]');
+    if (!div) return;
+    var badge = div.querySelector('.up-badge');
+    if (!badge) return;
+    badge.className = 'up-badge ' + (retryCount > 0 ? 'error' : 'pending');
+    badge.textContent = retryCount > 0 ? '!' + retryCount : '⤴';
+  }
+
   function tick(light) {
     return refreshBadge().then(function () {
       // 目錄浮層開著時，讓各目錄的 (張數) 跟著往下掉
@@ -192,9 +231,8 @@ App.queue = (function () {
         return App.tree.refreshCounts().then(App.tree.render);
       }
     }).then(function () {
-      // light=true：傳送過程中每送完一張呼叫，只更新數字不重繪縮圖。
-      // 重繪整個 grid 要撤銷並重建所有 objectURL，密集呼叫時多次 render
-      // 會互相踩到彼此的 URL（見 render 的說明）。整批結束再重繪一次即可。
+      // light=true：傳送過程中呼叫，畫面由 removeThumb 逐張處理，
+      // 不在這裡重繪整個 grid。
       if (light) { return; }
       if ($('queueView').classList.contains('active')) return render();
     }).catch(function () { /* 畫面更新失敗不該中斷上傳 */ });
@@ -272,7 +310,9 @@ App.queue = (function () {
           if (cancelRequested) { cancelled = true; return; }
           return uploadOne(rec).then(function () {
             ok++;
-            return tick(true);       // 只更新計數，不重繪縮圖（見 tick 的說明）
+            // 這張已送出：只把它那一格抽掉，不重繪整個 grid
+            removeThumb(rec.id);
+            return tick(true);
           }).catch(function (err) {
             if (App.auth.isAuthError(err)) {
               // 憑證失效：停止本輪，保留所有照片。
@@ -293,7 +333,11 @@ App.queue = (function () {
               retryCount: rec.retryCount,
               lastError: rec.lastError,
               lastTryAt: rec.lastTryAt
-            }).then(function () { return tick(true); });   // 只更新徽章
+            }).then(function () {
+              // 失敗的那張就地更新重試次數徽章，同樣不重繪整個 grid
+              updateThumbBadge(rec.id, rec.retryCount);
+              return tick(true);
+            });
           });
         });
       }, Promise.resolve());

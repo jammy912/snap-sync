@@ -470,3 +470,12 @@ nav.tabs .tab-sub:empty { display: none; }
     pointer-events: none; z-index: 6;
   }
 }
+
+/* 送出成功的縮圖淡出後移除。傳送過程中不重繪整個 grid（會撤銷所有
+   objectURL 造成競態），改為逐張抽掉——動畫讓使用者看得出「這張送掉了」，
+   而不是整批傳完才一次憑空消失。 */
+.thumb.sent-out {
+  transition: opacity .25s ease, transform .25s ease;
+  opacity: 0; transform: scale(.9);
+  pointer-events: none;
+}
