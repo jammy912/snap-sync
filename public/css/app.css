@@ -53,11 +53,17 @@ main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
 /* ---------- Tabs ---------- */
 nav.tabs { display: flex; background: var(--panel); border-bottom: 1px solid var(--border); flex-shrink: 0; }
 nav.tabs button {
-  flex: 1; padding: 12px; background: none; border: none;
+  flex: 1; padding: 10px 12px; background: none; border: none;
   color: var(--muted); font-size: 15px; font-weight: 500;
   border-bottom: 2px solid transparent; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  /* 副標可能有無切換，固定高度避免分頁列跟著抖動 */
+  min-height: 48px; justify-content: center;
 }
 nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent); }
+/* 待上傳張數與容量：拍照時不必切分頁就看得到累積了多少 */
+nav.tabs .tab-sub { font-size: 11px; font-weight: 400; color: var(--muted); line-height: 1; }
+nav.tabs .tab-sub:empty { display: none; }
 
 /* ---------- 登入 ---------- */
 #loginView {
@@ -149,11 +155,12 @@ nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent
 .ctl-side.left { justify-content: flex-start; }
 .ctl-side.right { justify-content: flex-end; }
 
-/* 待送出提示條 */
+/* 待送出提示條。原本固定在拍照頁底部，移到佇列頁上方後改成卡片樣式，
+   讓相機畫面保持乾淨、傳送相關操作集中在同一頁。 */
 .send-bar {
   display: flex; align-items: center; gap: 10px; flex-shrink: 0;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0));
-  background: var(--panel); border-top: 1px solid var(--border);
+  padding: 10px 12px; margin-bottom: 12px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
 }
 .send-info { flex: 1; font-size: 13px; color: var(--muted); }
 .send-btn { width: auto; padding: 10px 22px; flex-shrink: 0; }
@@ -164,10 +171,11 @@ nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent
 }
 .shutter:active { transform: scale(0.92); }
 .shutter:disabled { opacity: .4; }
+/* 現場戴手套操作，圖示與觸控範圍都要夠大才按得準 */
 .icon-btn {
-  width: 48px; height: 48px; border-radius: 50%;
+  width: 60px; height: 60px; border-radius: 50%;
   background: var(--panel2); border: 1px solid var(--border);
-  color: var(--text); font-size: 20px; cursor: pointer;
+  color: var(--text); font-size: 28px; cursor: pointer;
   display: flex; align-items: center; justify-content: center;
 }
 
@@ -269,6 +277,9 @@ nav.tabs button.active { color: var(--accent); border-bottom-color: var(--accent
   border: 2px solid #fff; background: rgba(0,0,0,.45);
   display: flex; align-items: center; justify-content: center;
   font-size: 15px; color: #fff; line-height: 1;
+  /* 從勾選框按下要能拖曳框選，因此這裡不可讓瀏覽器接手捲動或長按選字 */
+  touch-action: none; user-select: none; -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 .thumb.picked { border-color: var(--accent); }
 .thumb.picked .pick { background: var(--accent); border-color: var(--accent); }

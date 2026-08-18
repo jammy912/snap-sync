@@ -27,6 +27,11 @@ App.queue = (function () {
   var selecting = false;
   var picked = {};        // { id: true }
 
+  // 拖曳框選：dragTouched 記錄本次拖曳已處理過的張數，
+  // 避免手指在同一張上來回抖動時重複觸發。
+  var dragging = false;
+  var dragTouched = {};
+
   // 放大檢視用。刻意與 objectURLs 分開管理——render() 會 revoke 掉整批縮圖
   // 的 URL，共用的話上傳完成重繪時，正在看的那張會變成破圖。
   var viewList = [];      // 目前檢視序列（與畫面排序一致）
@@ -361,12 +366,17 @@ App.queue = (function () {
         div.appendChild(badge);
         div.appendChild(meta);
 
+        // 拖曳框選要靠 elementFromPoint 反查手指下方是哪一張，
+        // 把 id 掛在 DOM 上比維護一份座標表可靠——版面會隨螢幕寬度重排。
+        div.dataset.id = r.id;
+
         if (selecting) {
           var isPicked = !!picked[r.id];
           if (isPicked) div.classList.add('picked');
           var pick = document.createElement('div');
           pick.className = 'pick';
           pick.textContent = isPicked ? '✓' : '';
+          bindDragPick(pick, r.id);
           div.appendChild(pick);
           // 選取模式下點縮圖是勾選，不開放大檢視
           div.onclick = function () { togglePick(r.id); };
@@ -523,6 +533,14 @@ App.queue = (function () {
     return App.db.all().then(function (recs) {
       $('countBadge').textContent = recs.length ? '(' + recs.length + ')' : '';
 
+      // 分頁副標顯示張數與總容量：拍照頁不再有提示條，
+      // 這裡是使用者唯一能不切頁就看到「累積多少」的地方。
+      var totalSize = 0;
+      recs.forEach(function (r) { totalSize += r.size || 0; });
+      $('queueSub').textContent = recs.length
+        ? (recs.length + ' 張 · ' + App.util.fmtSize(totalSize))
+        : '';
+
       var bar = $('sendBar');
       if (!recs.length) { bar.style.display = 'none'; return; }
       bar.style.display = 'flex';
@@ -615,6 +633,104 @@ App.queue = (function () {
     if (picked[id]) { delete picked[id]; } else { picked[id] = true; }
     updateSelectUI();
     return render();
+  }
+
+  /**
+   * 只更新單一縮圖的勾選外觀，不重繪整個 grid。
+   *
+   * 拖曳過程每經過一張就 render() 會重建所有 DOM 與 objectURL，
+   * 在幾十張照片時明顯卡頓，手指還會因為節點被抽換而中斷拖曳。
+   */
+  function paintPick(id, on) {
+    var div = $('grid').querySelector('.thumb[data-id="' + id + '"]');
+    if (!div) return;
+    div.classList.toggle('picked', on);
+    var pick = div.querySelector('.pick');
+    if (pick) pick.textContent = on ? '✓' : '';
+  }
+
+  /**
+   * 從勾選框開始拖曳＝框選；從縮圖其他位置滑動＝正常捲動頁面。
+   *
+   * 這個分工是刻意的：整區禁止捲動的話，照片多於一螢幕時就看不到下面的，
+   * 得再做「拖到邊緣自動捲動」才能用，複雜度高很多。
+   *
+   * 拖過的一律【選上】，不做反向取消——起點狀態決定選或不選的話，
+   * 使用者很難預測拖到一半的結果，越拖越亂。
+   */
+  function bindDragPick(pickEl, id) {
+    pickEl.addEventListener('touchstart', function (ev) {
+      // 阻止捲動與後續的 click（否則放開手指會再 toggle 一次，把剛選的取消掉）
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      dragging = true;
+      dragTouched = {};
+
+      applyDrag(id);
+
+      var move = function (e) {
+        if (!dragging) return;
+        e.preventDefault();
+        var t = e.touches && e.touches[0];
+        if (!t) return;
+        var el = document.elementFromPoint(t.clientX, t.clientY);
+        if (!el) return;
+        var thumb = el.closest ? el.closest('.thumb') : null;
+        if (thumb && thumb.dataset.id) applyDrag(thumb.dataset.id);
+      };
+
+      var end = function () {
+        dragging = false;
+        document.removeEventListener('touchmove', move);
+        document.removeEventListener('touchend', end);
+        document.removeEventListener('touchcancel', end);
+        // 拖曳結束才做一次完整更新，把計數與畫面對齊
+        updateSelectUI();
+      };
+
+      // passive:false 才擋得住捲動——行動瀏覽器預設把 touchmove 當被動監聽
+      document.addEventListener('touchmove', move, { passive: false });
+      document.addEventListener('touchend', end);
+      document.addEventListener('touchcancel', end);
+    }, { passive: false });
+
+    // 桌機（現場也可能用平板接滑鼠、或在 PC 上操作）
+    pickEl.addEventListener('mousedown', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+
+      dragging = true;
+      dragTouched = {};
+      applyDrag(id);
+
+      var move = function (e) {
+        if (!dragging) return;
+        var el = document.elementFromPoint(e.clientX, e.clientY);
+        if (!el) return;
+        var thumb = el.closest ? el.closest('.thumb') : null;
+        if (thumb && thumb.dataset.id) applyDrag(thumb.dataset.id);
+      };
+      var end = function () {
+        dragging = false;
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', end);
+        updateSelectUI();
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', end);
+    });
+  }
+
+  /** 拖曳經過某張：一律選上，同一張只處理一次 */
+  function applyDrag(id) {
+    if (dragTouched[id]) return;
+    dragTouched[id] = true;
+    if (!picked[id]) {
+      picked[id] = true;
+      paintPick(id, true);
+    }
+    updateSelectUI();
   }
 
   /** 刪除所有勾選的照片。刪除不可逆，一律先確認。 */

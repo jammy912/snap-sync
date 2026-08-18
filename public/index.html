@@ -43,7 +43,12 @@
 
 <nav class="tabs">
   <button data-tab="camera" class="active">拍照</button>
-  <button data-tab="queue">佇列 <span id="countBadge"></span></button>
+  <!-- 待上傳張數與容量直接顯示在分頁上：拍照時不必離開相機畫面
+       就知道累積了多少、該不該傳了 -->
+  <button data-tab="queue">
+    <span>佇列 <span id="countBadge"></span></span>
+    <span class="tab-sub" id="queueSub"></span>
+  </button>
   <button data-tab="settings">設定</button>
 </nav>
 
@@ -80,15 +85,15 @@
         <button class="icon-btn" id="startCamBtn" title="開啟相機">📷</button>
       </div>
     </div>
-    <!-- 待送出提示條：拍完不自動上傳，要按這裡才送（避免拍到一半就佔用網路） -->
-    <div class="send-bar" id="sendBar" style="display:none">
-      <span class="send-info" id="sendInfo">—</span>
-      <button class="btn btn-primary send-btn" id="sendNowBtn">傳送</button>
-    </div>
   </section>
 
   <!-- 佇列 -->
   <section id="queueView">
+    <!-- 傳送提示與按鈕（原本在拍照頁下方，移來這裡讓相機畫面保持乾淨） -->
+    <div class="send-bar" id="sendBar" style="display:none">
+      <span class="send-info" id="sendInfo">—</span>
+      <button class="btn btn-primary send-btn" id="sendNowBtn">傳送</button>
+    </div>
     <div class="toolbar">
       <span id="queueInfo">—</span>
       <span class="spacer"></span>
