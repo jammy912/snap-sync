@@ -275,7 +275,11 @@ nav.tabs .tab-sub:empty { display: none; }
   border: 1px solid transparent;
 }
 .tree-row:active { background: var(--panel2); }
-.tree-row.selected { background: rgba(79,124,255,.18); border-color: var(--accent); }
+.tree-row.selected { background: rgba(57,197,179,.18); border-color: var(--accent); }
+/* 分枝節點（底下還有子目錄）不能當上傳目標，點了只是展開。
+   用次要色與較細的字重跟葉節點區隔，讓「哪些能選」一眼看得出來。 */
+.tree-row.branch .tree-name { color: var(--muted); font-weight: 400; }
+.tree-row:not(.branch) .tree-name { color: var(--text); font-weight: 500; }
 .tree-toggle {
   width: 22px; height: 22px; flex-shrink: 0; display: flex;
   align-items: center; justify-content: center; color: var(--muted); font-size: 12px;

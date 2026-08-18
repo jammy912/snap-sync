@@ -70,10 +70,14 @@ App.tree = (function () {
   function renderRecent() {
     var bar = $('recentBar');
     var box = $('recentChips');
-    // 只留仍存在於目前樹中的（目錄可能被刪或改名）
+    // 只留仍存在、且仍是葉節點的（目錄可能被刪、改名，或新增了子目錄
+    // 而變成分枝——分枝不能當上傳目標，留著只會讓人點了被擋回來）
     var exists = {};
     for (var i = 0; i < flat.length; i++) exists[flat[i].path] = true;
-    var list = recentList().filter(function (p) { return exists[p]; });
+    var byParent = buildIndex(flat);
+    var list = recentList().filter(function (p) {
+      return exists[p] && !(byParent[p] && byParent[p].length);
+    });
 
     box.innerHTML = '';
     if (!list.length) { bar.style.display = 'none'; return; }
@@ -110,6 +114,18 @@ App.tree = (function () {
 
   /** 選定目錄：記入最近使用、關閉浮層回到相機 */
   function choose(path) {
+    // 再擋一次非葉節點。這是共用入口——「最近」的捷徑也走這裡，
+    // 而目錄樹更新後，原本的葉節點可能多出子目錄而變成分枝。
+    // 此時不選取，改為展開讓使用者往下挑到實際的末層目錄。
+    var byParent = buildIndex(flat);
+    if (byParent[path] && byParent[path].length) {
+      expandTo(path);
+      expanded[path] = true;
+      if (!isSheetOpen()) { openSheet(); } else { render(); }
+      toast('「' + path.split('/').pop() + '」底下還有子目錄，請選到最末層');
+      return;
+    }
+
     setSelected(path);
     pushRecent(path);
     expandTo(path);
@@ -207,7 +223,20 @@ App.tree = (function () {
             row.appendChild(cnt);
           }
 
-          row.onclick = function () { choose(node.path); };
+          // 【只有葉節點可選】有子目錄的節點點了是展開／收合，不能當上傳目標。
+          //
+          // 照片一律要落在最末層的實際目錄。選到中間層會讓照片散在
+          // 「115年」這種分類目錄下，而不是「115年/8月/B1」——事後很難整理，
+          // 現場也不會發現自己選錯了層級。
+          if (hasKids) {
+            row.classList.add('branch');
+            row.onclick = function () {
+              expanded[node.path] = !expanded[node.path];
+              render();
+            };
+          } else {
+            row.onclick = function () { choose(node.path); };
+          }
 
           wrap.appendChild(row);
 
@@ -246,7 +275,19 @@ App.tree = (function () {
     for (var i = 0; i < flat.length; i++) {
       if (flat[i].path === last) { stillExists = true; break; }
     }
-    if (stillExists) { expandTo(last); setSelected(last); }
+    // 目錄樹更新後，原本的葉節點可能多出子目錄而變成分枝。
+    // 這種情況要取消選取——否則快門仍是啟用的，照片會落在中間分類層
+    // （例如落在「115年」而不是「115年/8月/B1」），事後很難整理。
+    var byParent = buildIndex(flat);
+    var becameBranch = stillExists && byParent[last] && byParent[last].length;
+
+    if (stillExists && !becameBranch) { expandTo(last); setSelected(last); }
+    else if (becameBranch) {
+      setSelected(null);
+      expandTo(last);
+      expanded[last] = true;
+      toast('「' + last.split('/').pop() + '」新增了子目錄，請重新選到最末層');
+    }
     else if (selected) {
       // 原本選的目錄已消失（目錄被刪或改名）
       setSelected(null);
