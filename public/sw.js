@@ -25,6 +25,7 @@ const ASSETS = [
   './js/camera.js',
   './js/queue.js',
   './js/app.js',
+  './icon-180.png',
   './icon-192.png',
   './icon-512.png',
   './icon-maskable-512.png'
@@ -72,13 +73,17 @@ self.addEventListener('fetch', event => {
           caches.open(CACHE).then(c => c.put(req, copy));
         }
         return resp;
-      }).catch(() => caches.match(req).then(c => c || caches.match('./index.html')))
+      }).catch(() => caches.match(req, { ignoreSearch: true })
+                       .then(c => c || caches.match('./index.html')))
     );
     return;
   }
 
   event.respondWith(
-    caches.match(req).then(cached => {
+    // ignoreSearch：圖示網址帶 ?v=15（強制 iOS 更新主畫面圖示用），
+    // 但 ASSETS 裡存的是不帶查詢字串的路徑，不忽略就會整批 miss，
+    // 離線時圖示全部載不出來。
+    caches.match(req, { ignoreSearch: true }).then(cached => {
       const network = fetch(req).then(resp => {
         if (resp && resp.status === 200 && resp.type === 'basic') {
           const copy = resp.clone();

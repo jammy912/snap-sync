@@ -4,8 +4,15 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="theme-color" content="#12181c">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="manifest" href="manifest.json?v=15">
+<!-- ⚠️ 圖示網址一定要帶 ?v=，且改圖時必須跟著遞增。
+     iOS 沒有「清除圖示快取」這種功能：主畫面捷徑是在加入的當下把圖複製走，
+     之後清 Safari 快取也不會更新。檔名（含查詢字串）不變，Safari 就沿用舊圖，
+     使用者刪掉捷徑重加也還是舊的。
+     apple-touch-icon 用 180x180：iOS 的偏好尺寸，且該檔不含透明背景
+     （iOS 不支援透明圖示，會把透明處填成黑色）。 -->
+<link rel="apple-touch-icon" href="icon-180.png?v=15">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png?v=15">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="現場拍照">
