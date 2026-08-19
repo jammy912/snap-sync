@@ -68,30 +68,26 @@
       <span class="value unset" id="targetLabel">尚未選擇目錄</span>
       <span class="caret">▼</span>
     </button>
+    <!-- 中間這一大片就是相簿：進頁面直接把佇列的照片載出來，
+         每張疊上完整路徑（過長會自動換行）。點縮圖開放大檢視。
+         沒有即時預覽（改叫系統相機，見 camera.js 開頭的說明），
+         這片空間不拿來放預覽，全部給相簿用。 -->
     <div class="cam-wrap">
-      <!-- 沒有即時預覽了（改叫系統相機，見 camera.js 開頭的說明），
-           這裡改放最後拍好的那張，讓人確認剛剛那張拍成什麼樣 -->
-      <img id="lastShot" alt="剛拍好的照片，點擊可放大檢視" style="display:none">
-      <div id="camHint">
-        按下方快門開啟相機<br>
-        <span style="font-size:13px">閃光燈在相機畫面上切換（關／開／自動）</span>
-      </div>
-      <!-- 未選目錄時的引導，蓋在預覽區上，可直接點開選單 -->
-      <button id="needTarget" style="display:none">
-        <span class="big">請先選擇上傳目錄</span>
-        <span class="sub">點這裡選擇</span>
-      </button>
-    </div>
-    <!-- 底片匣：拍照頁的相簿。進頁面就把佇列的照片載出來橫向排開，
-         不必切到佇列分頁就知道這個目錄已經拍了哪些、拍了幾張。
-         點縮圖開放大檢視（可左右滑瀏覽、放大、刪除）。 -->
-    <div id="camStripWrap" style="display:none">
-      <div class="strip-head">
+      <div class="album-head" id="albumHead" style="display:none">
         <span>已拍攝</span>
         <span class="spacer"></span>
         <span id="camStripCount"></span>
       </div>
-      <div id="camStrip" class="cam-strip"></div>
+      <div id="camStrip" class="album-grid"></div>
+      <div id="camHint">
+        按下方快門開始拍照<br>
+        <span style="font-size:13px">閃光燈在相機畫面上切換（關／開／自動）</span>
+      </div>
+      <!-- 未選目錄時的引導，蓋在相簿上，可直接點開選單 -->
+      <button id="needTarget" style="display:none">
+        <span class="big">請先選擇上傳目錄</span>
+        <span class="sub">點這裡選擇</span>
+      </button>
     </div>
     <!-- 三欄配置：左（選目錄）／中（快門）／右（保留）。
          用 grid 而非 flex 置中，右欄空著快門仍在正中央，不會偏移。 -->

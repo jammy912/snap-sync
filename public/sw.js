@@ -10,7 +10,7 @@
 
 // ⚠️ 這個版本號同時是畫面右上角顯示的版本（app.js 從 SW 取得後寫進標題）。
 // 改版時務必遞增，否則使用者會卡在舊版前端，而且看不出手機上跑的是哪一版。
-const CACHE = 'snapsync-shell-v26';
+const CACHE = 'snapsync-shell-v27';
 const ASSETS = [
   './',
   './index.html',

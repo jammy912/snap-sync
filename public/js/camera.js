@@ -115,7 +115,8 @@ App.camera = (function () {
         };
 
         App.db.add(rec).then(function () {
-          showLastShot(blob, id);
+          lastId = id;        // 相簿裡把這張框起來
+          renderStrip();      // 新拍的那張要立刻出現在相簿
 
           // 拍完立即檢視（設定可關）。
           //
@@ -126,8 +127,6 @@ App.camera = (function () {
           if (App.app.settings().autoReview !== false) {
             App.queue.openViewerById(id, true);
           }
-
-          renderStrip();      // 新拍的那張要立刻出現在底片匣
 
           // 只講最後一層目錄與大小，維持單行。
           // 完整路徑已常駐在上方的「上傳至」列，這裡重複只會把 toast 撐成兩行。
@@ -148,34 +147,15 @@ App.camera = (function () {
     img.src = url;
   }
 
-  /**
-   * 顯示剛拍好的那張（大圖預覽）。
-   * 沒有即時預覽之後，這塊空著會讓人以為相機壞了；擺上最後一張
-   * 至少能確認「剛剛那張拍進去了、拍成什麼樣」。
-   * 點下去會開放大檢視（可左右滑、放大、刪除），拍糊了當場就能重拍。
-   */
-  var lastUrl = null;
-  var lastId = null;
-  function showLastShot(blob, id) {
-    var img = $('lastShot');
-    if (!img) return;
-    if (lastUrl) URL.revokeObjectURL(lastUrl);
-    lastUrl = URL.createObjectURL(blob);
-    lastId = id;
-    img.src = lastUrl;
-    img.style.display = 'block';
-    var hint = $('camHint');
-    if (hint) hint.style.display = 'none';
-  }
-
-  /* ---------- 底片匣（拍照頁的相簿）---------- */
+  /* ---------- 相簿（拍照頁中間那一大片）---------- */
 
   // ⚠️ 這批 URL 必須【自己管】，不可共用 queue 的 objectURLs。
   //    queue.render() 會 revoke 掉它那批的全部；共用的話，佇列頁一重繪
-  //    （傳送時會密集觸發）就把底片匣的網址一起撤銷，這裡整排變破圖。
+  //    （傳送時會密集觸發）就把相簿的網址一起撤銷，這裡整片變破圖。
   //    那正是先前「整頁縮圖同時變成預覽讀取失敗」的同一類競態。
   var stripURLs = [];
   var stripSeq = 0;
+  var lastId = null;      // 剛拍的那張，用主色框出來
 
   function revokeStrip() {
     stripURLs.forEach(function (u) { URL.revokeObjectURL(u); });
@@ -183,8 +163,10 @@ App.camera = (function () {
   }
 
   /**
-   * 重畫底片匣：把佇列裡的照片依拍攝時間（新的在前）排成一列縮圖。
-   * 進到拍照頁就看得到已經拍了哪些，像相簿一樣，不必切分頁確認。
+   * 重畫相簿：把佇列裡的照片依拍攝時間（新的在前）排成格狀。
+   * 進到拍照頁就看得到已經拍了哪些，不必切分頁確認。
+   * 每張疊上【完整路徑】（過長自動換行），佇列裡混著多個目錄時
+   * 才分得出這張要傳去哪。
    */
   function renderStrip() {
     var strip = $('camStrip');
@@ -203,10 +185,10 @@ App.camera = (function () {
       revokeStrip();
       strip.innerHTML = '';
 
-      var wrap = $('camStripWrap');
-      if (wrap) { wrap.style.display = recs.length ? 'block' : 'none'; }
+      var head = $('albumHead');
+      if (head) { head.style.display = recs.length ? 'flex' : 'none'; }
       var hint = $('camHint');
-      if (hint && recs.length) { hint.style.display = 'none'; }
+      if (hint) { hint.style.display = recs.length ? 'none' : 'block'; }
 
       recs.forEach(function (r) {
         if (!(r.blob instanceof Blob)) return;
@@ -214,29 +196,36 @@ App.camera = (function () {
         stripURLs.push(url);
 
         var cell = document.createElement('button');
-        cell.className = 'strip-cell' + (r.id === lastId ? ' is-last' : '');
+        cell.className = 'album-cell' + (r.id === lastId ? ' is-last' : '');
         cell.type = 'button';
 
+        var shot = document.createElement('span');
+        shot.className = 'album-shot';
         var im = document.createElement('img');
         im.alt = '';
         im.src = url;
-        cell.appendChild(im);
+        shot.appendChild(im);
 
         if (r.retryCount > 0) {
           var b = document.createElement('span');
-          b.className = 'strip-badge';
+          b.className = 'album-badge';
           b.textContent = '!' + r.retryCount;
-          cell.appendChild(b);
+          shot.appendChild(b);
         }
+        cell.appendChild(shot);
 
-        // 疊上目標路徑：佇列裡可能混著好幾個目錄的照片，
-        // 只看縮圖分不出這張要傳去哪，換目錄後更容易誤判。
-        // 位置有限，顯示最後一層（完整路徑在放大檢視裡看得到）。
+        // 路徑（過長自動換行，CSS 限 3 行）。
+        //
+        // ⚠️ 從【後面】往前取，不是從前面截斷。
+        //    最後一層才是分辨這張要傳去哪的關鍵；前面的「防治部/02桃園/相片」
+        //    每張都一樣，佔滿 3 行反而把真正有用的葉目錄擠掉。
+        //    開頭補 … 表示前面還有層級，完整路徑仍可從放大檢視看到。
         var cap = document.createElement('span');
-        cap.className = 'strip-path';
-        var segs = (r.targetPath || '').split('/');
-        cap.textContent = segs[segs.length - 1] || '—';
-        cap.title = r.targetPath || '';
+        cap.className = 'album-path';
+        var full = r.targetPath || '—';
+        var segs = full.split('/');
+        cap.textContent = segs.length > 3 ? '…/' + segs.slice(-3).join('/') : full;
+        cap.title = full;
         cell.appendChild(cap);
 
         // 點縮圖開放大檢視，可左右滑瀏覽整個佇列
@@ -250,52 +239,29 @@ App.camera = (function () {
   }
 
   /**
-   * 那張預覽的照片被刪掉了（或已上傳成功而移除）。
-   * 大圖預覽指著它就要收掉，否則點下去開不起檢視器；
-   * 底片匣也要跟著重畫，不然會留著一張已不存在的縮圖。
+   * 照片被刪掉了（或已上傳成功而移除），相簿要跟著重畫，
+   * 不然會留著一張已不存在的縮圖，點下去開不起檢視器。
    */
   function notifyRemoved(id) {
-    if (id && id === lastId) {
-      var img = $('lastShot');
-      if (img) { img.removeAttribute('src'); img.style.display = 'none'; }
-      if (lastUrl) { URL.revokeObjectURL(lastUrl); lastUrl = null; }
-      lastId = null;
-    }
+    if (id && id === lastId) { lastId = null; }
     renderStrip();
   }
 
-  /** 登出時清空畫面，換人登入不該看到前一個人的照片 */
+  /** 登出時清空相簿，換人登入不該看到前一個人的照片 */
   function stop() {
-    var img = $('lastShot');
-    if (img) { img.removeAttribute('src'); img.style.display = 'none'; }
-    if (lastUrl) { URL.revokeObjectURL(lastUrl); lastUrl = null; }
     lastId = null;
-
     revokeStrip();
     var strip = $('camStrip');
     if (strip) strip.innerHTML = '';
-    var wrap = $('camStripWrap');
-    if (wrap) wrap.style.display = 'none';
+    var head = $('albumHead');
+    if (head) head.style.display = 'none';
     var hint = $('camHint');
-    if (hint) hint.style.display = '';
+    if (hint) hint.style.display = 'block';
   }
 
   function init() {
     $('shutterBtn').onclick = shoot;
     $('camInput').onchange = onPicked;
-
-    // 點預覽開放大檢視。檢視器是佇列頁那一套（左右滑換張、點圖放大、
-    // 刪除），不另外做一份——重複實作遲早會有一邊漏修。
-    // 這裡【不傳 single】：主動點進來是想回頭看，可左右滑瀏覽整個佇列；
-    // 拍完自動跳出的那次才只鎖定單張。
-    var last = $('lastShot');
-    if (last) {
-      last.onclick = function () {
-        if (!lastId) return;
-        App.queue.openViewerById(lastId);
-      };
-    }
-
     refreshShutterState();
   }
 

@@ -42,13 +42,13 @@ App.queue = (function () {
    * 從本機移除一張照片。
    *
    * ⚠️ 一律走這裡，不要直接呼叫 App.db.remove()。
-   * 拍照頁的預覽（#lastShot）記著剛拍那張的 id，照片消失時要一併收掉，
-   * 否則畫面留著一張已不存在的照片，點下去開不起檢視器。
+   * 拍照頁的相簿要跟著重畫，否則留著一張已不存在的縮圖，
+   * 點下去開不起檢視器。
    * 移除有三條路徑（上傳成功、檢視器刪除、多選刪除），集中在這裡才不會漏。
    */
   function removePhoto(id) {
     return App.db.remove(id).then(function () {
-      // notifyRemoved 會收掉大圖預覽（若指著這張）並重畫底片匣，
+      // notifyRemoved 會重畫拍照頁的相簿，
       // 上傳成功、單張刪除、多選刪除三條路徑都會走到這裡
       if (App.camera && App.camera.notifyRemoved) { App.camera.notifyRemoved(id); }
     });
