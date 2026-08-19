@@ -23,6 +23,16 @@ App.queue = (function () {
   // 收到照片但本機不知道，下次重送要靠冪等去重，多繞一圈。
   var cancelRequested = false;
 
+  // 使用者主動取消過，且還沒再按「傳送」。
+  //
+  // ⚠️ 這個旗標存在的理由：取消【必須真的停下來】。
+  //    原本 flush 的 finally 一律呼叫 scheduleRetry()，於是按下取消後
+  //    約 5 秒又自動 flush(true) 重新開始，flushing 再度變 true——
+  //    畫面上傳送鍵已回到「傳送」，但按「選取」卻被擋下說「傳送中無法
+  //    選取」，兩邊互相矛盾（使用者實際回報）。
+  //    取消的語意是「停」，不是「等五秒再繼續」。
+  var autoRetryPaused = false;
+
   // 多選刪除用。只在選取模式有效，離開選取模式就清空。
   var selecting = false;
   var picked = {};        // { id: true }
@@ -112,6 +122,10 @@ App.queue = (function () {
   /** 依最接近的退避到期時間排下一次重送 */
   function scheduleRetry() {
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    // 使用者按過取消就不再自動排程。擋在這裡而不是各個呼叫端——
+    // 排程入口有好幾處（flush 收尾、恢復連線、回到前景），
+    // 分散判斷遲早漏掉一條，那條就會讓「取消」失效。
+    if (autoRetryPaused) return;
 
     App.db.all().then(function (recs) {
       // 只看已確認的：未確認的照片不該讓重試計時器空轉
@@ -264,9 +278,16 @@ App.queue = (function () {
   function flush(silent) {
     if (flushing) return Promise.resolve();
     if (!App.auth.isLoggedIn()) return Promise.resolve();
+    // 取消後的自動重送（恢復連線、回到前景、重試計時器）一律不放行；
+    // 使用者按「傳送」是 silent=false，不受此限。
+    if (silent && autoRetryPaused) return Promise.resolve();
 
     var manual = !silent;
     if (manual && retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+
+    // 使用者親自按「傳送」＝明確要送，解除先前取消造成的自動重送暫停。
+    // 只有手動才解除：自動重送不該推翻使用者「停」的決定。
+    if (manual) { autoRetryPaused = false; }
 
     flushing = true;
     cancelRequested = false;      // 每次開始傳送都重置，否則上一輪的取消會殘留
@@ -392,9 +413,12 @@ App.queue = (function () {
       flushing = false;
       cancelRequested = false;
       // 還有沒送掉的就排下一輪；全部送完 scheduleRetry 會自行關掉旗標。
-      // 取消後仍要排——剩下的是已確認的照片，本來就該繼續送，
-      // 只是不再佔用使用者當下的操作（退避間隔至少 5 秒）。
-      scheduleRetry();
+      //
+      // ⚠️ 但使用者按過取消就【不排】。原本無條件 scheduleRetry()，
+      //    取消後約 5 秒又自動開始，flushing 再度變 true，於是傳送鍵
+      //    顯示「傳送」（看起來停了）卻擋住「選取」說傳送中——自相矛盾。
+      //    要再送請使用者自己按「傳送」，那才是明確的意圖。
+      if (!autoRetryPaused) { scheduleRetry(); }
       return tick();
     });
   }
@@ -822,7 +846,11 @@ App.queue = (function () {
   function cancelFlush() {
     if (!flushing || cancelRequested) return;
     cancelRequested = true;
-    toast('送完目前這張就停止');
+    // 停掉自動重送，否則 finally 的 scheduleRetry 會在幾秒後又自己開始，
+    // 使用者會發現「明明取消了卻還在傳」
+    autoRetryPaused = true;
+    if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+    toast('已停止傳送，未送出的會保留在本機');
     refreshBadge();
   }
 
