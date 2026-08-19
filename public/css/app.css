@@ -183,62 +183,60 @@ nav.tabs .tab-sub:empty { display: none; }
   display: flex; flex-direction: column;
   overflow: hidden; min-height: 0;
 }
-/* ---------- 相簿（拍照頁中間那一大片）---------- */
-/* 標題列固定在頂端，不隨相簿捲動 */
-.album-head {
-  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
-  font-size: 12px; color: var(--muted);
-  padding: 8px 12px; border-bottom: 1px solid var(--border);
-  background: var(--panel);
+/* ---------- 相簿（拍照頁中間那一大片）：一次一張大圖，左右滑換張 ---------- */
+/* ⚠️ min-height:0 不可省：flex 子項的預設 min-height 是 auto，
+   照片會把容器撐開，把下方的快門列擠出畫面（.cam-wrap 那條踩過的坑
+   同一個原因）。 */
+#albumWrap {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
 }
-.album-head .spacer { flex: 1; }
-
-/* 格狀相簿，佔滿中間整片並自行捲動。
-   ⚠️ min-height:0 不可省：flex 子項的預設 min-height 是 auto，
-   內容一多就會把整個容器撐開，把下方的快門列擠出畫面
-   （.cam-wrap 那條踩過的坑同一個原因）。 */
-.album-grid {
-  flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
-  gap: 10px; padding: 12px; align-content: start;
+.album-stage {
+  position: relative; flex: 1; min-height: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: #000; overflow: hidden;
+  /* 左右滑換張，不要讓瀏覽器把橫向滑動解讀成上一頁／下一頁 */
+  touch-action: pan-y;
 }
-/* ⚠️ align-self:start 讓每格只佔自己需要的高度。
-   不設的話 grid 會把同列各格拉成等高，路徑長短不一時整列被最長的撐開，
-   照片之間出現大片空白（實測 4 行路徑會把整列拉開近一倍）。 */
-.album-cell {
-  display: flex; flex-direction: column; gap: 4px;
-  align-self: start;
-  padding: 0; border: none; background: none;
-  font-family: inherit; text-align: left; cursor: pointer;
+/* contain 不裁切：這是「確認拍到什麼」的畫面，
+   裁掉邊緣會讓人誤判構圖有沒有涵蓋到該拍的東西。 */
+#albumImg {
+  max-width: 100%; max-height: 100%;
+  width: auto; height: auto; object-fit: contain;
+  display: block; cursor: pointer;
 }
-.album-shot {
-  position: relative; display: block; width: 100%; aspect-ratio: 1;
-  border-radius: 10px; overflow: hidden;
-  border: 1px solid var(--border); background: var(--panel2);
+/* 左右換張鍵。半透明壓在圖上，手指構得到又不擋畫面。 */
+.album-nav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 40px; height: 56px; z-index: 2;
+  border: none; border-radius: 8px;
+  background: rgba(0,0,0,.42); color: #fff;
+  font-size: 30px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
 }
-.album-shot img { width: 100%; height: 100%; object-fit: cover; display: block; }
-/* 剛拍的那張用主色框出來，連拍時一眼認得出最新是哪張 */
-.album-cell.is-last .album-shot { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
-/* 完整路徑放在縮圖【下方】而不是疊在圖上：
-   疊在圖上就只能放一行，路徑一長就被截斷，等於看不到。
-   放下面才能自由換行，也不會遮住照片內容。 */
-/* 路徑很長要自己換行：CJK 與長英數路徑都要能斷。
-   ⚠️ 但要限行數（3 行），否則路徑長短不一時每格高度差很多，
-   grid 會把整列撐到跟最長的一樣高，照片之間出現大片空白。
-   超過的部分以 … 收尾，完整路徑仍可從放大檢視看到。
-   min-height 讓短路徑也佔滿 3 行，各列高度才會一致。 */
-.album-path {
-  font-size: 10px; line-height: 1.35; color: var(--muted);
-  word-break: break-all; overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
-  overflow: hidden;
-  min-height: calc(10px * 1.35 * 3);
-}
+.album-nav.prev { left: 6px; }
+.album-nav.next { right: 6px; }
+.album-nav:disabled { opacity: .18; }
 .album-badge {
-  position: absolute; top: 4px; right: 4px;
+  position: absolute; top: 8px; right: 8px; z-index: 2;
   background: var(--danger); color: #fff;
-  font-size: 10px; padding: 1px 5px; border-radius: 999px;
+  font-size: 11px; padding: 2px 8px; border-radius: 999px;
 }
+/* 路徑與張數列，固定在照片下方 */
+.album-bar {
+  flex-shrink: 0; display: flex; align-items: center; gap: 10px;
+  padding: 6px 12px; background: var(--panel);
+  border-top: 1px solid var(--border);
+}
+/* 路徑很長要自己換行：CJK 與長英數路徑都要能斷。
+   限 2 行避免把照片區壓縮太多，完整路徑在 title 與放大檢視看得到。 */
+.album-path {
+  flex: 1; font-size: 11px; line-height: 1.35; color: var(--muted);
+  word-break: break-all; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.album-pos { flex-shrink: 0; font-size: 11px; color: var(--muted); }
 /* 相簿空的時候才顯示（由 JS 切換 display）。
    用 absolute 浮在中央而不佔 flex 版位：這樣它與相簿格互不影響，
    相簿的捲動高度不必扣掉這塊提示。pointer-events:none 讓

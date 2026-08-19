@@ -68,17 +68,23 @@
       <span class="value unset" id="targetLabel">尚未選擇目錄</span>
       <span class="caret">▼</span>
     </button>
-    <!-- 中間這一大片就是相簿：進頁面直接把佇列的照片載出來，
-         每張疊上完整路徑（過長會自動換行）。點縮圖開放大檢視。
-         沒有即時預覽（改叫系統相機，見 camera.js 開頭的說明），
-         這片空間不拿來放預覽，全部給相簿用。 -->
+    <!-- 中間這一大片就是相簿：一次顯示一張大圖，左右滑換張。
+         不做縮圖牆——現場要看的是「這張拍清楚了沒」，縮圖太小看不出
+         對焦有沒有跑掉。沒有即時預覽（改叫系統相機，見 camera.js
+         開頭的說明），這片空間全部給照片用。 -->
     <div class="cam-wrap">
-      <div class="album-head" id="albumHead" style="display:none">
-        <span>已拍攝</span>
-        <span class="spacer"></span>
-        <span id="camStripCount"></span>
+      <div id="albumWrap" style="display:none">
+        <div class="album-stage" id="albumStage">
+          <img id="albumImg" alt="已拍攝的照片，點擊可放大檢視">
+          <button class="album-nav prev" id="albumPrev" aria-label="上一張">‹</button>
+          <button class="album-nav next" id="albumNext" aria-label="下一張">›</button>
+          <span class="album-badge" id="albumBadge" style="display:none"></span>
+        </div>
+        <div class="album-bar">
+          <span class="album-path" id="albumPath">—</span>
+          <span class="album-pos" id="albumPos">—</span>
+        </div>
       </div>
-      <div id="camStrip" class="album-grid"></div>
       <div id="camHint">
         按下方快門開始拍照<br>
         <span style="font-size:13px">閃光燈在相機畫面上切換（關／開／自動）</span>
@@ -163,11 +169,11 @@
     </div>
     <div class="field">
       <label class="check-row" for="autoReview">
-        <input type="checkbox" id="autoReview" checked>
-        <span>拍完立即放大檢視</span>
+        <input type="checkbox" id="autoReview">
+        <span>拍完自動跳出全螢幕檢視</span>
       </label>
-      <div class="hint">拍完馬上跳出大圖確認清不清楚，關掉後改為只在下方底片匣顯示縮圖。
-        連拍時嫌礙事可關閉。</div>
+      <div class="hint">拍照頁中間本來就會顯示剛拍的那張大圖，通常不需要開。
+        想要全螢幕（可再放大、直接刪除）才勾選；連拍時會多一次關閉動作。</div>
     </div>
     <div class="field">
       <label for="endpointOverride">端點網址覆寫（選填）</label>
