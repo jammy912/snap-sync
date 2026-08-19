@@ -59,18 +59,26 @@ header {
   display: flex; align-items: center; gap: 10px;
   flex-shrink: 0;
 }
-/* 標題列右上角的圖示鍵（目前是「設定」的 ⋮）。
-   觸控範圍做到 36px：現場可能戴手套，純文字 ⋮ 太細按不準。 */
+/* 標題列右上角的圖示鍵（設定）。
+   ⚠️ 用 --text 不用 --muted：戶外強光下灰色幾乎看不見（現場回報）。
+   觸控範圍 40px：現場可能戴手套，太小按不準。 */
 .hdr-btn {
-  flex-shrink: 0; width: 36px; height: 36px;
-  border: none; background: none; color: var(--muted);
-  font-size: 20px; line-height: 1; cursor: pointer;
+  flex-shrink: 0; width: 40px; height: 40px;
+  border: 1px solid var(--border); background: var(--panel2);
+  color: var(--text); cursor: pointer;
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
 }
-.hdr-btn:active { background: var(--panel2); }
+.hdr-btn svg { width: 22px; height: 22px; display: block; }
+.hdr-btn svg path, .hdr-btn svg circle {
+  fill: none; stroke: currentColor; stroke-width: 1.9;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.hdr-btn:active { background: var(--panel); }
 /* 目前停在設定頁時點亮，跟分頁列的 active 一致 */
-.hdr-btn.active { color: var(--accent-bright); background: var(--panel2); }
+.hdr-btn.active {
+  color: var(--accent-bright); border-color: var(--accent);
+}
 /* 狀態列放大後，標題在窄螢幕上要讓位，不能把狀態擠掉 */
 header h1 { flex: 1; font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 /* 版本號：現場回報問題時要能一眼確認手機上跑的是哪一版前端。

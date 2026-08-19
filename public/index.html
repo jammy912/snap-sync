@@ -48,8 +48,15 @@
   <span class="status-dot"><span class="dot" id="netDot"></span><span id="netText">檢查中</span></span>
   <!-- 設定很少用，移到右上角，把分頁列讓給每天在用的兩個。
        仍帶 data-tab，沿用 switchTab 那套切換邏輯。 -->
+  <!-- 用齒輪而非 ⋮：⋮ 太細、在戶外強光下幾乎看不見，也不容易一眼
+       看出是「設定」。齒輪辨識度高，且與下方控制列的線條圖示同風格。 -->
   <button class="hdr-btn" id="settingsBtn" data-tab="settings"
-          title="設定" aria-label="設定">⋮</button>
+          title="設定" aria-label="設定">
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="3.2"/>
+      <path d="M19.4 13.5a7.6 7.6 0 0 0 0-3l1.7-1.3-1.8-3.1-2 .8a7.6 7.6 0 0 0-2.6-1.5L14.4 3H9.6l-.3 2.4a7.6 7.6 0 0 0-2.6 1.5l-2-.8-1.8 3.1 1.7 1.3a7.6 7.6 0 0 0 0 3l-1.7 1.3 1.8 3.1 2-.8a7.6 7.6 0 0 0 2.6 1.5l.3 2.4h4.8l.3-2.4a7.6 7.6 0 0 0 2.6-1.5l2 .8 1.8-3.1z"/>
+    </svg>
+  </button>
 </header>
 
 <nav class="tabs">
