@@ -811,3 +811,69 @@ function Add-PhotoWatermark {
         if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
     }
 }
+
+<#
+.SYNOPSIS
+    把「還沒壓浮水印的原圖」備份到子目錄。
+
+.DESCRIPTION
+    浮水印是【破壞性】加工：壓上去就回不去了，字蓋掉的畫面內容永久消失。
+    工程照片日後可能要重新出圖（換版型、字打錯、要不同語言的浮水印），
+    沒有原圖就只能回工地重拍。
+
+    因此在壓字【之前】先把驗證過的原檔複製一份到照片同層的子目錄。
+    只在該目錄真的要壓浮水印時才備份——沒有 .snapsync 內容就不壓字，
+    落地檔本身就是原圖，再備份一份只是白佔空間。
+
+    ⚠️ 呼叫時機必須在 MD5 校驗鏈通過之後、Add-PhotoWatermark 之前，
+       那是磁碟上唯一存在「已驗證原圖」的時間點。
+
+.PARAMETER Path
+    落地後的照片完整路徑（此時尚未壓浮水印）。
+
+.PARAMETER DirName
+    備份子目錄名稱，預設 _original。底線開頭讓它排在檔案總管最前面，
+    也提示這是系統產生的目錄，不是案場資料。
+
+.OUTPUTS
+    成功回傳備份後的完整路徑；失敗回傳 $null（不拋例外）。
+    備份失敗不可影響落地結果——照片已經驗證無誤地寫入磁碟了。
+#>
+function Backup-OriginalPhoto {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string] $Path,
+        [string] $DirName = '_original',
+        [string] $LogFile
+    )
+
+    try {
+        $dir = Split-Path -Parent $Path
+        $backupDir = Join-Path $dir $DirName
+
+        if (-not (Test-Path -LiteralPath $backupDir)) {
+            New-Item -ItemType Directory -Force -Path $backupDir | Out-Null
+        }
+
+        $dest = Join-Path $backupDir (Split-Path -Leaf $Path)
+
+        # 已存在就不覆寫：同名檔代表這張先前已備份過（重跑或重送），
+        # 覆寫的風險是拿「已壓過浮水印的檔」蓋掉真正的原圖。
+        if (Test-Path -LiteralPath $dest) {
+            if ($LogFile) {
+                Write-Log -Message "  原圖備份已存在，略過：$dest" -LogFile $LogFile
+            }
+            return $dest
+        }
+
+        Copy-Item -LiteralPath $Path -Destination $dest -Force
+        return $dest
+    }
+    catch {
+        if ($LogFile) {
+            Write-Log -Message ("原圖備份失敗（不影響落地）：{0}" -f $_.Exception.Message) `
+                -Level 'WARN' -LogFile $LogFile
+        }
+        return $null
+    }
+}

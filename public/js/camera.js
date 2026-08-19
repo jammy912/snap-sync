@@ -115,7 +115,7 @@ App.camera = (function () {
         };
 
         App.db.add(rec).then(function () {
-          showLastShot(blob);
+          showLastShot(blob, id);
           // 只講最後一層目錄與大小，維持單行。
           // 完整路徑已常駐在上方的「上傳至」列，這裡重複只會把 toast 撐成兩行。
           var parts = target.split('/');
@@ -139,17 +139,30 @@ App.camera = (function () {
    * 顯示剛拍好的那張。
    * 沒有即時預覽之後，這塊空著會讓人以為相機壞了；擺上最後一張
    * 至少能確認「剛剛那張拍進去了、拍成什麼樣」。
+   * 點下去會開放大檢視（可左右滑、放大、刪除），拍糊了當場就能重拍。
    */
   var lastUrl = null;
-  function showLastShot(blob) {
+  var lastId = null;
+  function showLastShot(blob, id) {
     var img = $('lastShot');
     if (!img) return;
     if (lastUrl) URL.revokeObjectURL(lastUrl);
     lastUrl = URL.createObjectURL(blob);
+    lastId = id;
     img.src = lastUrl;
     img.style.display = 'block';
     var hint = $('camHint');
     if (hint) hint.style.display = 'none';
+    var tip = $('camReviewTip');
+    if (tip) tip.style.display = 'block';
+  }
+
+  /**
+   * 那張預覽的照片被刪掉了（在放大檢視裡刪的），把預覽收掉。
+   * 不處理的話畫面還留著一張已經不存在的照片，點下去會開不起來。
+   */
+  function notifyRemoved(id) {
+    if (id && id === lastId) { stop(); }
   }
 
   /** 登出時清掉畫面上的最後一張，換人登入不該看到前一個人的照片 */
@@ -157,15 +170,32 @@ App.camera = (function () {
     var img = $('lastShot');
     if (img) { img.removeAttribute('src'); img.style.display = 'none'; }
     if (lastUrl) { URL.revokeObjectURL(lastUrl); lastUrl = null; }
+    lastId = null;
     var hint = $('camHint');
     if (hint) hint.style.display = '';
+    var tip = $('camReviewTip');
+    if (tip) tip.style.display = 'none';
   }
 
   function init() {
     $('shutterBtn').onclick = shoot;
     $('camInput').onchange = onPicked;
+
+    // 點預覽開放大檢視。檢視器是佇列頁那一套（左右滑換張、點圖放大、
+    // 刪除），不另外做一份——重複實作遲早會有一邊漏修。
+    var last = $('lastShot');
+    if (last) {
+      last.onclick = function () {
+        if (!lastId) return;
+        App.queue.openViewerById(lastId);
+      };
+    }
+
     refreshShutterState();
   }
 
-  return { init: init, stop: stop, refreshShutterState: refreshShutterState };
+  return {
+    init: init, stop: stop, refreshShutterState: refreshShutterState,
+    notifyRemoved: notifyRemoved
+  };
 })();

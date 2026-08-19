@@ -38,6 +38,20 @@ App.queue = (function () {
   var viewIdx = -1;
   var viewURL = null;
 
+  /**
+   * 從本機移除一張照片。
+   *
+   * ⚠️ 一律走這裡，不要直接呼叫 App.db.remove()。
+   * 拍照頁的預覽（#lastShot）記著剛拍那張的 id，照片消失時要一併收掉，
+   * 否則畫面留著一張已不存在的照片，點下去開不起檢視器。
+   * 移除有三條路徑（上傳成功、檢視器刪除、多選刪除），集中在這裡才不會漏。
+   */
+  function removePhoto(id) {
+    return App.db.remove(id).then(function () {
+      if (App.camera && App.camera.notifyRemoved) { App.camera.notifyRemoved(id); }
+    });
+  }
+
   /** blob → 純 base64（去掉 data:image/jpeg;base64, 前綴） */
   function blobToBase64(blob) {
     return new Promise(function (res, rej) {
@@ -174,7 +188,7 @@ App.queue = (function () {
         throw e;
       }
       // 校驗通過，雲端已有正確副本，才能從本機移除
-      return App.db.remove(rec.id);
+      return removePhoto(rec.id);
     });
   }
 
@@ -600,6 +614,24 @@ App.queue = (function () {
     showAt(idx);
   }
 
+  /**
+   * 從佇列【以外】的地方打開檢視器（目前是拍照頁點預覽）。
+   *
+   * viewList 平常只由 render() 建立，而 render() 只在佇列頁跑；
+   * 直接呼叫 openViewer 會因為 viewList 是空的而開不起來。
+   * 這裡自己撈一次並沿用同樣的排序（新的在前），
+   * 左右滑的順序才會跟佇列頁看到的一致。
+   */
+  function openViewerById(id) {
+    return App.db.all().then(function (recs) {
+      recs.sort(function (a, b) {
+        return new Date(b.capturedAt) - new Date(a.capturedAt);
+      });
+      viewList = recs.map(function (r) { return r.id; });
+      openViewer(id);
+    });
+  }
+
   function closeViewer() {
     $('viewer').style.display = 'none';
     releaseViewURL();
@@ -617,7 +649,7 @@ App.queue = (function () {
     var id = viewList[viewIdx];
     if (!confirm('刪除這張照片？照片只存在本機，刪除後無法復原。')) return;
 
-    App.db.remove(id).then(function () {
+    removePhoto(id).then(function () {
       var at = viewList.indexOf(id);
       if (at >= 0) viewList.splice(at, 1);
       toast('已刪除');
@@ -917,7 +949,7 @@ App.queue = (function () {
     }
 
     return ids.reduce(function (chain, id) {
-      return chain.then(function () { return App.db.remove(id); });
+      return chain.then(function () { return removePhoto(id); });
     }, Promise.resolve()).then(function () {
       toast('已刪除 ' + ids.length + ' 張');
       return exitSelect();
@@ -997,6 +1029,7 @@ App.queue = (function () {
   return {
     init: init, flush: flush, render: render, refreshBadge: refreshBadge,
     resumeAutoRetry: resumeAutoRetry, unconfirmAll: unconfirmAll,
-    exitSelect: exitSelect, isSelecting: function () { return selecting; }
+    exitSelect: exitSelect, isSelecting: function () { return selecting; },
+    openViewerById: openViewerById
   };
 })();

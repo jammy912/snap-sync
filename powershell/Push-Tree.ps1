@@ -38,9 +38,14 @@ param(
 
     # 掃描時要略過的資料夾名稱
     # node_modules 等開發用目錄動輒上萬個子目錄，掃到會讓腳本看似當掉
+    #
+    # ⚠️ _original 是落地端存原圖備份的目錄（見 Backup-OriginalPhoto）。
+    #    每個有浮水印的照片目錄底下都會有一個，不排除的話手機的上傳選單
+    #    會被灌滿「_original」，而且那裡本來就不該是拍照的上傳目的地。
     [string[]] $ExcludeNames = @(
         '$RECYCLE.BIN', 'System Volume Information', '.git',
-        'node_modules', '.svn', '.vs', 'bin', 'obj', '.idea', '.vscode'
+        'node_modules', '.svn', '.vs', 'bin', 'obj', '.idea', '.vscode',
+        '_original'
     ),
 
     # 目錄數超過此值就中止，不推送。

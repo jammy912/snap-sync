@@ -197,6 +197,13 @@ try {
             # 傳 RootDir：往上找標記檔時不可超出該根，否則會撈到別的案場的資訊
             $wmText = Get-WatermarkText -Dir $fullTargetDir -RootDir $rootFull
             if ($wmText) {
+                # 先備份原圖再壓字。浮水印是破壞性加工，字蓋掉的畫面內容
+                # 永久消失；日後要重新出圖（換版型、字打錯、要不同浮水印）
+                # 沒有原圖就只能回工地重拍。
+                # 只有真的要壓字時才備份——不壓字的話落地檔本身就是原圖。
+                $bak = Backup-OriginalPhoto -Path $destPath -LogFile $LogFile
+                if ($bak) { Write-Log -Message "  原圖已備份：$bak" -LogFile $LogFile }
+
                 if (Add-PhotoWatermark -Path $destPath -Text $wmText -LogFile $LogFile) {
                     Write-Log -Message "  已壓浮水印（$($wmText -split "`n" | Measure-Object | Select-Object -ExpandProperty Count) 行）" -LogFile $LogFile
                 }
