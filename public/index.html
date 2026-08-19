@@ -49,7 +49,8 @@
 </header>
 
 <nav class="tabs">
-  <button data-tab="camera" class="active">拍照</button>
+  <!-- 這個分頁不只拍照：選目錄、拍、看相簿（左右滑／放大／刪除）都在這裡 -->
+  <button data-tab="camera" class="active">現場作業</button>
   <!-- 待上傳張數與容量直接顯示在分頁上：拍照時不必離開相機畫面
        就知道累積了多少、該不該傳了 -->
   <button data-tab="queue">
@@ -162,7 +163,7 @@
     </div>
     <div class="gallery-grid" id="grid"></div>
     <div class="empty" id="queueEmpty" style="display:none">
-      目前沒有待上傳的照片<br><span style="font-size:13px">切到「拍照」開始記錄現場</span>
+      目前沒有待上傳的照片<br><span style="font-size:13px">切到「現場作業」開始記錄現場</span>
     </div>
   </section>
 
