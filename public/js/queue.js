@@ -122,22 +122,51 @@ App.queue = (function () {
   //    用能力偵測而非平台判斷（iOS Safari 16.4+ 起支援）。
   //    ——不要再假設「iOS 沒有」，torch 那次已經證明這種假設會過期。
   var wakeLock = null;
+  // ⚠️ 申請是非同步的，wakeLock 要等 request() 回來才會被指派。
+  //    只靠 `if (wakeLock) return` 擋不住連續呼叫——在第一次還沒回來之前，
+  //    後續每一次都會通過檢查各拿一個鎖。
+  //    （壓力測試實測：500 次隨機交錯累積出 142 個同時持有的鎖。）
+  //    這個旗標把「正在申請中」也一起擋掉。
+  var wakeLockPending = false;
+  // 世代編號：每次 release 就 +1，讓「還在路上」的那次申請作廢。
+  // 只用布林旗標不夠——release 清掉旗標後，下一次 acquire 又能進門，
+  // 於是先前那個還沒回來的請求依然會拿到一個沒人管的鎖（壓力測試從
+  // 142 個降到 60 個，仍在洩漏）。同 render 的 renderSeq 手法。
+  var wakeSeq = 0;
 
   function acquireWakeLock() {
-    if (!('wakeLock' in navigator) || wakeLock) return;
+    if (!('wakeLock' in navigator) || wakeLock || wakeLockPending) return;
+    wakeLockPending = true;
+    var seq = wakeSeq;
     try {
       navigator.wakeLock.request('screen').then(function (lock) {
-        // 已經傳完才拿到就直接放掉，避免螢幕白亮著
-        if (!flushing) { lock.release().catch(function () {}); return; }
+        if (seq === wakeSeq) { wakeLockPending = false; }
+        // ⚠️ 三種情況要把剛拿到的鎖直接放掉：
+        //    1. 已被 release 作廢（seq 過期）——不放就變成沒人管的鎖
+        //    2. 期間又拿到了另一個（wakeLock 已有值）
+        //    3. 既沒在傳、也沒有排程等待
+        //    第 3 點的條件必須含 retryTimer：退避等待期間 flushing 是
+        //    false，只看 flushing 的話等待中的喚醒會被立刻放掉（實測抓到）。
+        if (seq !== wakeSeq || wakeLock || (!flushing && !retryTimer)) {
+          lock.release().catch(function () {});
+          return;
+        }
         wakeLock = lock;
         // 系統可能自行釋放（例如電量過低），此時清掉參照，
         // 下次 visibilitychange 才會重新申請
         lock.addEventListener('release', function () { wakeLock = null; });
-      }).catch(function () { /* 不支援或被拒絕：傳送照常，只是螢幕會暗 */ });
-    } catch (e) { /* 舊瀏覽器 */ }
+      }).catch(function () {
+        // 不支援或被拒絕：傳送照常，只是螢幕會暗。
+        // 旗標一定要清掉，否則之後永遠申請不到（卡在「申請中」）。
+        if (seq === wakeSeq) { wakeLockPending = false; }
+      });
+    } catch (e) { wakeLockPending = false; /* 舊瀏覽器 */ }
   }
 
   function releaseWakeLock() {
+    // 讓所有「申請中」的那幾次作廢，它們回來時會自己放掉
+    wakeSeq++;
+    wakeLockPending = false;
     if (!wakeLock) return;
     var lock = wakeLock;
     wakeLock = null;
@@ -157,12 +186,15 @@ App.queue = (function () {
     // 使用者按過取消就不再自動排程。擋在這裡而不是各個呼叫端——
     // 排程入口有好幾處（flush 收尾、恢復連線、回到前景），
     // 分散判斷遲早漏掉一條，那條就會讓「取消」失效。
-    if (autoRetryPaused) return;
+    //
+    // ⚠️ 每一條 return 之前都要 releaseWakeLock()：這裡是「不再有東西要送」
+    //    的判定點，漏掉任何一條就會讓螢幕永遠亮著把電耗光。
+    if (autoRetryPaused) { releaseWakeLock(); return; }
 
     App.db.all().then(function (recs) {
       // 只看已確認的：未確認的照片不該讓重試計時器空轉
       var pending = pendingOf(recs).filter(isConfirmed);
-      if (!pending.length) return;   // 已確認的都送完了，不留空轉的計時器
+      if (!pending.length) { releaseWakeLock(); return; }   // 都送完了，收工
 
       // 取最早可以重試的那一筆，等到它到期就整批再跑一次
       var wait = Math.min.apply(null, pending.map(function (r) {
@@ -172,11 +204,21 @@ App.queue = (function () {
       // 至少隔 5 秒，避免連續失敗時瞬間狂打端點
       wait = Math.max(wait, 5000);
 
+      // ⚠️ 等待期間也要保持喚醒。
+      //    退避至少 5 秒，這段空檔若螢幕暗掉、JS 被暫停，計時器根本不會
+      //    觸發，重送就永遠不會開始——使用者會以為還在排隊，其實已經停了。
+      //    整段「傳送中 → 等待 → 再傳送」都不放開，直到全部送完或取消。
+      acquireWakeLock();
+
       retryTimer = setTimeout(function () {
         retryTimer = null;
         flush(true);        // 靜默重送，不洗版
       }, wait);
-    }).catch(function () { /* 排程失敗不影響手動傳送 */ });
+    }).catch(function () {
+      // 排程失敗不影響手動傳送，但一定要放掉喚醒鎖——
+      // 這條路徑不會有計時器接手，不放就變成永遠亮著
+      releaseWakeLock();
+    });
   }
 
   /**
@@ -446,7 +488,11 @@ App.queue = (function () {
       var wasCancelled = cancelRequested;
       flushing = false;
       cancelRequested = false;
-      releaseWakeLock();          // 傳送結束就放開，這東西很耗電
+
+      // ⚠️ 這裡【不要】無條件釋放 wake lock。
+      //    下面若還要 scheduleRetry，等待期間仍需保持喚醒
+      //    （螢幕暗掉會讓計時器不觸發，重送永遠不會開始）。
+      //    釋放交給兩個真正的終點：取消，或 scheduleRetry 發現沒東西要送。
 
       // ⚠️ 使用者按過取消：把剩下的照片退回【未確認】＝「還沒按過傳送」。
       //    只停計時器不夠——confirmed 還掛著的話畫面會說
@@ -457,6 +503,7 @@ App.queue = (function () {
       //    那時清會被那張的收尾蓋回去。
       //    照片本身完全不動，只是不再自動送，要送請使用者再按一次「傳送」。
       if (wasCancelled) {
+        releaseWakeLock();        // 使用者喊停，這是終點
         return unconfirmAll().then(tick);
       }
 
@@ -1110,8 +1157,11 @@ App.queue = (function () {
       if (document.visibilityState !== 'visible') return;
       // ⚠️ 切到背景時瀏覽器會自動釋放 wake lock，回到前景【必須重新申請】，
       //    否則第二次之後螢幕照樣會暗掉——這是 Wake Lock API 的規定行為，
-      //    不是我們的 bug。還在傳才申請。
-      if (flushing) { acquireWakeLock(); }
+      //    不是我們的 bug。
+      //    條件要含 retryTimer：退避等待期間 flushing 是 false，
+      //    只看 flushing 的話等待中切出去再回來就不會重新申請，
+      //    螢幕暗掉後計時器不觸發，重送永遠不會開始。
+      if (flushing || retryTimer) { acquireWakeLock(); }
       if ($('queueView').classList.contains('active')) { render(); }
     });
 
