@@ -87,6 +87,9 @@ try {
 
         $id = [string]$item.id
         $tmpPath = $null
+        # ⚠️ 每張都要重設：不重設的話上一張的值會殘留，
+        #    導致沒壓浮水印的照片也被標成「已壓浮水印」。
+        $watermarked = $false
         try {
             # --- 1. 解析根名稱 → 實體路徑，並確認未逸出該根（防路徑穿越） ---
             $fileName = [string]$item.fileName
@@ -187,7 +190,9 @@ try {
                 Remove-Item -LiteralPath $destPath -Force -ErrorAction SilentlyContinue
                 throw "落地檔案校驗失敗：應為 $expectedMd5、磁碟 $diskMd5（已刪除壞檔，雲端保留重試）"
             }
-            Write-Log -Message "  校驗通過 md5=$diskMd5（上傳→雲端→下載→磁碟 四段一致）" -LogFile $LogFile
+            # 校驗通過不記錄：每張都印一行會把 log 灌滿，而「落地成功」那行
+            # 本來就隱含校驗已通過（沒過會 throw，走到不了那裡）。
+            # 校驗【失敗】仍會拋例外並記錄——那才是需要看到的。
 
             # --- 4c. 壓浮水印（該目錄的 .snapsync 有內容才壓）---
             #
@@ -204,12 +209,14 @@ try {
                 # 永久消失；日後要重新出圖（換版型、字打錯、要不同浮水印）
                 # 沒有原圖就只能回工地重拍。
                 # 只有真的要壓字時才備份——不壓字的話落地檔本身就是原圖。
-                $bak = Backup-OriginalPhoto -Path $destPath -LogFile $LogFile
-                if ($bak) { Write-Log -Message "  原圖已備份：$bak" -LogFile $LogFile }
+                # 成功不記錄：每張都印一行完整路徑會把 log 灌滿，
+                # 而備份路徑本來就是「落地路徑\_original\同檔名」推得出來。
+                # 失敗仍會由 Backup-OriginalPhoto 自己記 WARN——那才需要知道。
+                [void](Backup-OriginalPhoto -Path $destPath -LogFile $LogFile)
 
-                if (Add-PhotoWatermark -Path $destPath -Text $wmText -LogFile $LogFile) {
-                    Write-Log -Message "  已壓浮水印（$($wmText -split "`n" | Measure-Object | Select-Object -ExpandProperty Count) 行）" -LogFile $LogFile
-                }
+                # 成功不另記一行，改為併進下方「落地成功」的結尾標註。
+                # 壓字【失敗】時 Add-PhotoWatermark 會自己記 WARN。
+                $watermarked = Add-PhotoWatermark -Path $destPath -Text $wmText -LogFile $LogFile
             }
 
             # --- 5. 驗證通過，才 ack（永久刪雲端）---
@@ -221,8 +228,11 @@ try {
 
             $ok++
             $totalBytes += $written
-            Write-Log -Message ("落地成功 {0} → {1}（{2:N0} bytes，driveDeleted={3}）" -f `
-                $id, $destPath, $written, $ack.driveDeleted) -LogFile $LogFile
+            # 一張一行就好：校驗通過、原圖備份都隱含在「成功」裡，
+            # 只把有無浮水印帶上（那是會改變檔案內容的加工）。
+            Write-Log -Message ("落地成功 {0} → {1}（{2:N0} bytes，driveDeleted={3}{4}）" -f `
+                $id, $destPath, $written, $ack.driveDeleted,
+                $(if ($watermarked) { '，已壓浮水印' } else { '' })) -LogFile $LogFile
         }
         catch {
             # 不 ack：雲端保留，下一輪重試
