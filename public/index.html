@@ -85,7 +85,7 @@
           <span class="album-pos" id="albumPos">—</span>
         </div>
       </div>
-      <!-- 即時拍照：App 內預覽，Android 可開閃光燈。
+      <!-- 即時拍照：App 內預覽，可開閃光燈（裝置支援才顯示該鍵）。
            蓋在相簿之上，關閉後回到相簿。 -->
       <div id="liveWrap" style="display:none">
         <video id="video" autoplay playsinline muted></video>
@@ -130,9 +130,9 @@
       </div>
       <button class="shutter" id="shutterBtn" disabled></button>
       <div class="ctl-side right">
-        <!-- 即時拍照：App 內預覽，不必每張都經過系統相機的「使用照片」。
-             Android 另有閃光燈可開；iOS 沒有（WebKit 未實作 torch），
-             要閃光燈請用快門的系統相機模式。 -->
+        <!-- 即時拍照：App 內預覽，不必每張都經過系統相機的「使用照片」，
+             連拍比較快。閃光燈由裝置能力決定（iOS 實測也會亮），
+             不支援的鏡頭就不顯示那顆鍵。 -->
         <button class="icon-btn" id="liveBtn" title="即時拍照" aria-label="即時拍照">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.7l1.4-2h6.8l1.4 2h2.7A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>

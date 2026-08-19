@@ -1,16 +1,24 @@
-/* camera.js — 叫用系統相機、縮圖壓縮
+/* camera.js — 兩種取像方式 + 縮圖壓縮
  *
- * ⚠️ 為什麼不用 getUserMedia 自己做預覽？【因為閃光燈】
+ * 【兩種模式並存，各有取捨】
  *
- * 現場（工地暗處、管道間、天花板內部）沒有補光就拍不到東西，閃光燈是硬需求。
- * 但網頁控制閃光燈只有 Android Chrome 做得到：
- *     track.applyConstraints({ advanced: [{ torch: true }] })
- * iOS Safari 至今沒有實作 torch，getCapabilities() 根本不回傳這個欄位——
- * 不是權限問題也不是版本太舊，是 WebKit 沒做。螢幕補光的亮度在工地不夠用。
+ * 1. 系統相機（快門鍵，input[capture]）
+ *    叫出手機原生相機。閃光燈的關／開／自動是 Apple／Google 自己的介面，
+ *    順便白拿原廠的對焦與 HDR。代價：每張要多按一次「使用照片」，連拍慢。
  *
- * 所以改成兩個平台【都叫系統相機】（input[capture]）：閃光燈的關／開／自動
- * 用手機原生相機的按鈕，順便白拿原廠的對焦與 HDR。
- * 代價是失去 App 內即時預覽，每張要多按一次「使用照片」——已與使用者確認接受。
+ * 2. 即時拍照（快門右邊的相機鍵，getUserMedia）
+ *    App 內預覽，按快門直接抓一格，連拍流暢。
+ *    閃光燈用 track.applyConstraints({ advanced: [{ torch: true }] })。
+ *
+ * ⚠️ 修正錯誤認知（2026-08-19 實機驗證）：
+ *    我先前在多處註解與 commit 訊息裡寫「iOS Safari 沒有實作 torch，
+ *    getCapabilities() 不回傳該欄位」——【這是錯的】。
+ *    使用者以 iPhone 實測：即時拍照的閃電鍵會出現且按下去真的會亮。
+ *    torchBtn 只在 getCapabilities().torch 為真時才顯示，能亮就代表
+ *    WebKit 有支援（Safari 16.4+ 起）。
+ *    → 不要再假設「iOS 一定沒有 torch」。一律以 getCapabilities() 的
+ *      實際回報為準，這也是本檔 hasTorch() 的作法（本來就正確，
+ *      錯的只有註解）。
  *
  * 拍照後【一律先寫入本機佇列】再嘗試上傳，絕不「傳成功才存」——
  * 否則弱網環境下照片會直接消失。
@@ -161,10 +169,10 @@ App.camera = (function () {
 
   /* ---------- 即時拍照（App 內預覽，Android 可開閃光燈）---------- */
 
-  // ⚠️ 閃光燈只有 Android Chrome 有：track.applyConstraints({advanced:[{torch:true}]})。
-  //    iOS Safari 沒實作 torch，getCapabilities() 不回傳這個欄位（見檔頭說明），
-  //    所以 iOS 開了即時拍照也看不到閃光燈鍵——這是平台限制，不是壞掉。
-  //    要閃光燈的 iOS 使用者請用左邊的系統相機鍵。
+  // 閃光燈：track.applyConstraints({ advanced: [{ torch: true }] })。
+  // 支不支援【一律問 getCapabilities()】，不要用平台判斷——
+  // iOS 實測是會亮的（見檔頭的「修正錯誤認知」）。
+  // 有些鏡頭（前鏡頭）本來就沒燈，所以切換鏡頭後要重新問一次。
   var stream = null;
   var track = null;
   var torchOn = false;
@@ -195,6 +203,13 @@ App.camera = (function () {
       $('camHint').style.display = 'none';
       refreshLiveUI();
       refreshShutterState();
+
+      // ⚠️ 部分裝置在 track 剛拿到時 getCapabilities() 還是空的，
+      //    此時問 torch 會得到「不支援」而把閃光燈鍵藏起來（其實有）。
+      //    等串流真的開始播放後再問一次，補顯示那顆鍵。
+      var again = function () { refreshLiveUI(); };
+      v.addEventListener('loadedmetadata', again, { once: true });
+      setTimeout(again, 500);
     }).catch(function (e) {
       toast('無法開啟相機：' + (e.message || e.name));
       stopLive();
