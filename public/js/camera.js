@@ -34,98 +34,31 @@ App.camera = (function () {
 
   var busy = false;      // 縮圖處理中，擋住重複按快門
 
-  /** 未選目錄或正在處理上一張時，快門停用 */
+  /**
+   * 快門的啟用狀態。
+   *
+   * ⚠️ 相機沒開就【不能按】——這是刻意的。
+   *    相機關著時中間顯示的是相簿（已拍過的照片），此時快門若能按，
+   *    使用者會以為拍到了，其實什麼都沒發生。停用讓「要先開相機」
+   *    這件事一目了然。
+   */
   function refreshShutterState() {
-    $('shutterBtn').disabled = !App.tree.selectedPath() || busy;
+    $('shutterBtn').disabled = !liveOn() || !App.tree.selectedPath() || busy;
   }
 
-  /**
-   * 按快門。即時拍照開著就從預覽抓一格，否則叫出系統相機。
-   * 同一顆快門兩種行為，現場不必記「哪個模式要按哪顆」。
-   */
+  /** 按快門＝從即時預覽抓一格 */
   function shoot() {
     if (busy) return;
+    if (!liveOn()) { toast('請先按右邊的相機鍵開啟相機'); return; }
     if (!App.tree.selectedPath()) {
       toast('請先選擇上傳目錄');
       App.tree.openSheet();
       return;
     }
-    if (liveOn()) { captureLive(); return; }
-    $('camInput').click();
+    captureLive();
   }
 
-  /**
-   * 系統相機回來了（使用者按取消則不會觸發本事件）。
-   * 這裡起的壓縮、入庫流程與舊版 getUserMedia 版本完全相同，
-   * 差別只在來源從 <video> 換成 File。
-   */
-  function onPicked(e) {
-    var input = e.target;
-    var file = input.files && input.files[0];
-
-    // ⚠️ 必須清空，且要在讀完 file 之後。
-    // 不清空的話，下一張若被 iOS 判定為「同一個檔案」就不會再觸發 change，
-    // 快門按了完全沒反應（連拍時很容易踩到）。
-    input.value = '';
-
-    if (!file) return;
-
-    // 拍照時間在這一刻取，與檔名時間戳共用同一個值，避免跨秒時兩者對不起來
-    var capturedAt = new Date().toISOString();
-    var target = App.tree.selectedPath();
-    if (!target) { toast('請先選擇上傳目錄'); return; }
-
-    busy = true;
-    refreshShutterState();
-
-    var url = URL.createObjectURL(file);
-    var img = new Image();
-
-    function done() {
-      URL.revokeObjectURL(url);
-      busy = false;
-      refreshShutterState();
-    }
-
-    img.onerror = function () {
-      done();
-      toast('讀取照片失敗，請再拍一次');
-    };
-
-    img.onload = function () {
-      // 系統相機是全解析度拍攝（可能 3~8MB），一定要縮圖再存。
-      // 瀏覽器畫 <img> 時已套用 EXIF 方向，drawImage 出來的方向是正的。
-      var w = img.naturalWidth, h = img.naturalHeight;
-      if (!w || !h) { img.onerror(); return; }
-
-      var st = App.app.settings();
-      var max = st.maxEdge;
-      if (Math.max(w, h) > max) {
-        var scale = max / Math.max(w, h);
-        w = Math.round(w * scale);
-        h = Math.round(h * scale);
-      }
-
-      var c = $('canvas');
-      c.width = w; c.height = h;
-      c.getContext('2d').drawImage(img, 0, 0, w, h);
-
-      c.toBlob(function (blob) {
-        if (!blob) { done(); toast('拍照失敗'); return; }
-        saveShot(blob, w, h, target, capturedAt).then(done, done);
-      }, 'image/jpeg', st.quality);
-    };
-
-    img.src = url;
-  }
-
-  /**
-   * 把壓好的照片寫進佇列並更新畫面。
-   *
-   * ⚠️ 系統相機與即時拍照【共用】這一段，不要各寫一份。
-   *    兩條路徑只有「取像方式」不同，存檔規則（檔名時間戳、不自動上傳、
-   *    存完跳到新拍那張）完全一樣；分開寫遲早只修到其中一邊。
-   */
+  /** 把壓好的照片寫進佇列並更新畫面 */
   function saveShot(blob, w, h, target, capturedAt) {
     var id = App.util.uuid();
     var rec = {
@@ -226,6 +159,11 @@ App.camera = (function () {
     if (v) { v.srcObject = null; }
     var lw = $('liveWrap');
     if (lw) lw.style.display = 'none';
+
+    // ⚠️ UI 更新放在這裡，不要放在各個呼叫端。
+    //    關相機有四條路徑（按鍵、切分頁、進背景、登出、開啟失敗），
+    //    分散處理遲早漏掉一條，那條就會留著「關閉相機」的圖示與閃光燈鍵。
+    refreshLiveUI();
   }
 
   /** 關掉即時拍照，回到相簿 */
@@ -235,14 +173,46 @@ App.camera = (function () {
     return renderStrip();
   }
 
+  // 相機鍵的兩種圖示。用 currentColor 描邊，跟著按鈕狀態變色。
+  // 相機（按了會開啟）
+  var ICON_CAM_ON =
+    '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+    '<path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.7l1.4-2h6.8l1.4 2h2.7A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>' +
+    '<circle cx="12" cy="12.8" r="3.4"/></svg>';
+  // 相機加一條斜線（按了會關閉，回到相簿）
+  var ICON_CAM_OFF =
+    '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+    '<path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.7l1.4-2h6.8l1.4 2h2.7A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>' +
+    '<circle cx="12" cy="12.8" r="3.4"/>' +
+    '<path d="M4 20 20 4"/></svg>';
+
   function refreshLiveUI() {
+    var on = liveOn();
+
+    // 閃光燈鍵在下方控制列，只在相機開著且該鏡頭真的有燈時才出現。
+    // 相機關著時中間是相簿，留著一顆按了沒反應的閃電只會讓人困惑。
     var t = $('torchBtn');
     if (t) {
-      // 不支援就整顆藏起來，留著只會讓人一直按卻沒反應
-      t.style.display = hasTorch() ? 'flex' : 'none';
+      t.style.display = (on && hasTorch()) ? 'flex' : 'none';
       t.classList.toggle('is-on', torchOn);
       t.setAttribute('aria-pressed', torchOn ? 'true' : 'false');
     }
+
+    // 相機鍵：圖示【依當下狀態顯示要做的動作】。
+    // 關著→相機圖示（按了會開）；開著→關閉相機圖示（按了會關、回相簿）。
+    // 只靠顏色區分不夠，現場強光下看不出亮暗差異。
+    var lb = $('liveBtn');
+    if (lb) {
+      lb.classList.toggle('is-on', on);
+      lb.setAttribute('aria-pressed', on ? 'true' : 'false');
+      lb.title = on ? '關閉相機（回相簿）' : '開啟相機';
+      lb.setAttribute('aria-label', on ? '關閉相機' : '開啟相機');
+      lb.innerHTML = on ? ICON_CAM_OFF : ICON_CAM_ON;
+    }
+
+    // 切換鏡頭只在相機開著時有意義
+    var sw = $('liveSwitchBtn');
+    if (sw) { sw.style.display = on ? 'flex' : 'none'; }
   }
 
   function toggleTorch() {
@@ -435,11 +405,12 @@ App.camera = (function () {
 
   function init() {
     $('shutterBtn').onclick = shoot;
-    $('camInput').onchange = onPicked;
 
-    // 即時拍照：開啟／關閉、閃光燈、切換鏡頭
-    $('liveBtn').onclick = function () { startLive(); };
-    $('liveCloseBtn').onclick = function () { exitLive(); };
+    // 相機鍵＝開關。開著就關掉回相簿，關著就開起來。
+    // 同一顆鍵兩用，現場不必找「關閉」在哪裡。
+    $('liveBtn').onclick = function () {
+      if (liveOn()) { exitLive(); } else { startLive(); }
+    };
     $('torchBtn').onclick = toggleTorch;
     $('liveSwitchBtn').onclick = switchCam;
 

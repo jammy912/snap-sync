@@ -85,30 +85,17 @@
           <span class="album-pos" id="albumPos">—</span>
         </div>
       </div>
-      <!-- 即時拍照：App 內預覽，可開閃光燈（裝置支援才顯示該鍵）。
-           蓋在相簿之上，關閉後回到相簿。 -->
+      <!-- 相機預覽，蓋在相簿之上。關閉後回到相簿。 -->
       <div id="liveWrap" style="display:none">
         <video id="video" autoplay playsinline muted></video>
         <div class="live-top">
-          <span class="live-tag">即時拍照</span>
+          <span class="live-tag">相機</span>
           <span class="spacer" id="liveCount"></span>
-          <button class="live-btn" id="torchBtn" aria-label="閃光燈" aria-pressed="false" style="display:none">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12z"/>
-            </svg>
-          </button>
-          <button class="live-btn" id="liveSwitchBtn" aria-label="切換鏡頭">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M20 11a8 8 0 0 0-13.9-5.4M4 13a8 8 0 0 0 13.9 5.4"/>
-              <path d="M20 5v6h-6M4 19v-6h6"/>
-            </svg>
-          </button>
-          <button class="live-btn" id="liveCloseBtn" aria-label="關閉即時拍照">✕</button>
         </div>
       </div>
       <div id="camHint">
-        按下方快門開始拍照<br>
-        <span style="font-size:13px">閃光燈在相機畫面上切換（關／開／自動）</span>
+        按右下角的相機鍵開啟相機<br>
+        <span style="font-size:13px">開啟後才能按快門拍照</span>
       </div>
       <!-- 未選目錄時的引導，蓋在相簿上，可直接點開選單 -->
       <button id="needTarget" style="display:none">
@@ -116,8 +103,8 @@
         <span class="sub">點這裡選擇</span>
       </button>
     </div>
-    <!-- 三欄配置：左（選目錄）／中（快門）／右（保留）。
-         用 grid 而非 flex 置中，右欄空著快門仍在正中央，不會偏移。 -->
+    <!-- 三欄配置：左（選目錄）／中（快門）／右（閃光燈＋相機開關）。
+         用 grid 而非 flex 置中，右欄按鈕數量變動時快門仍在正中央。 -->
     <div class="cam-controls">
       <div class="ctl-side left">
         <!-- 線條圖示（風格對齊康庭官網的 fontello 圖示字型）。
@@ -130,10 +117,22 @@
       </div>
       <button class="shutter" id="shutterBtn" disabled></button>
       <div class="ctl-side right">
-        <!-- 即時拍照：App 內預覽，不必每張都經過系統相機的「使用照片」，
-             連拍比較快。閃光燈由裝置能力決定（iOS 實測也會亮），
-             不支援的鏡頭就不顯示那顆鍵。 -->
-        <button class="icon-btn" id="liveBtn" title="即時拍照" aria-label="即時拍照">
+        <!-- 切換鏡頭與閃光燈：只在相機開著時顯示（由 refreshLiveUI 控制）。
+             閃光燈還要該鏡頭真的有燈才出現（前鏡頭通常沒有）。 -->
+        <button class="icon-btn" id="liveSwitchBtn" title="切換鏡頭" aria-label="切換鏡頭" style="display:none">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 11a8 8 0 0 0-13.9-5.4M4 13a8 8 0 0 0 13.9 5.4"/>
+            <path d="M20 5v6h-6M4 19v-6h6"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="torchBtn" title="閃光燈" aria-label="閃光燈" aria-pressed="false" style="display:none">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12z"/>
+          </svg>
+        </button>
+        <!-- 相機開關。圖示依當下狀態切換（見 camera.js 的 ICON_CAM_ON／OFF）：
+             關著顯示相機（按了會開），開著顯示相機加斜線（按了會關、回相簿）。 -->
+        <button class="icon-btn" id="liveBtn" title="開啟相機" aria-label="開啟相機" aria-pressed="false">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.7l1.4-2h6.8l1.4 2h2.7A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>
             <circle cx="12" cy="12.8" r="3.4"/>
@@ -141,13 +140,6 @@
         </button>
       </div>
     </div>
-    <!--
-      ⚠️ 閃光燈就是靠這一行。
-      capture="environment" 讓 iOS／Android 直接開【後鏡頭系統相機】，
-      使用者在原生相機介面上切關／開／自動，網頁端無從也不需要控制。
-      不加 multiple：一次拍一張，拍完直接進佇列。
-    -->
-    <input type="file" id="camInput" accept="image/*" capture="environment" hidden>
   </section>
 
   <!-- 佇列 -->
