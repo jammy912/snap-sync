@@ -315,12 +315,13 @@ App.camera = (function () {
       img.style.display = 'none';
     }
 
-    // 路徑：從【後面】往前取三層。前面的「防治部/02桃園/相片」每張都一樣，
-    // 從前面截斷會把真正能分辨目的地的葉目錄擠掉。
+    // 路徑顯示【完整的】，不要自己截斷。
+    // 先前只取末三層並在開頭補 …，但現場的路徑深度不一，
+    // 被砍掉的那幾層有時正是分辨案場的關鍵（同一個「115-9」可能出現在
+    // 好幾個案場底下）。改為全部交給 CSS 換行呈現（限 2 行）。
     var full = r.targetPath || '—';
-    var segs = full.split('/');
     var cap = $('albumPath');
-    cap.textContent = segs.length > 3 ? '…/' + segs.slice(-3).join('/') : full;
+    cap.textContent = full;
     cap.title = full;
 
     $('albumPos').textContent = (albumIdx + 1) + '/' + album.length

@@ -154,9 +154,17 @@ nav.tabs .tab-sub:empty { display: none; }
 }
 .target-bar:active { background: var(--panel); }
 .target-bar .label { color: var(--muted); flex-shrink: 0; }
+/* 完整顯示目標路徑，過長就換行（最多 2 行）。
+   這是「照片會傳到哪」的唯一常駐提示，截斷成 .../115年/11… 等於沒說，
+   選錯目錄整批照片就進錯資料夾。 */
 .target-bar .value {
-  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-size: 15px; font-weight: 600;
+  flex: 1; font-size: 15px; font-weight: 600; line-height: 1.35;
+  text-align: left;
+  word-break: break-all; overflow-wrap: anywhere;
+  /* 3 行：深層路徑在 320px 的窄機（iPhone SE）上要 3 行才放得完，
+     兩行仍會被截掉末層目錄——那正是最需要看到的部分。 */
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 .target-bar .value.unset { color: var(--warn); font-weight: 400; }
 .target-bar .caret { color: var(--muted); font-size: 11px; flex-shrink: 0; }
@@ -208,11 +216,14 @@ nav.tabs .tab-sub:empty { display: none; }
   position: absolute; inset: 0; z-index: 4;
   background: #fff; opacity: 0; pointer-events: none;
 }
-#camFlash.on { animation: camFlash .22s ease-out; }
-/* 先瞬間全白再淡出，模擬快門開合；0.22s 夠短，連拍不會卡手 */
+/* 0.72s（原 0.22s 再加 0.5s）：使用者反映閃太快、感覺不明顯。
+   純視覺效果不擋操作——busy 期間快門本來就停用，動畫拉長不影響連拍節奏。 */
+#camFlash.on { animation: camFlash .72s ease-out; }
+/* 先瞬間全白（提高到近乎全不透明，拍照感更明確）再慢慢淡出 */
 @keyframes camFlash {
   0%   { opacity: 0; }
-  12%  { opacity: .85; }
+  6%   { opacity: .98; }
+  30%  { opacity: .75; }
   100% { opacity: 0; }
 }
 
@@ -269,12 +280,14 @@ nav.tabs .tab-sub:empty { display: none; }
   padding: 6px 12px; background: var(--panel);
   border-top: 1px solid var(--border);
 }
-/* 路徑很長要自己換行：CJK 與長英數路徑都要能斷。
-   限 2 行避免把照片區壓縮太多，完整路徑在 title 與放大檢視看得到。 */
+/* 顯示完整路徑，很長就自己換行（CJK 與長英數路徑都要能斷）。
+   限 3 行：深層路徑大多三行內放得完，又不會把照片區壓掉太多。
+   .album-bar 是 flex-shrink:0，這裡變高會吃掉照片的高度，
+   所以行數不宜再往上加。 */
 .album-path {
   flex: 1; font-size: 11px; line-height: 1.35; color: var(--muted);
   word-break: break-all; overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
   overflow: hidden;
 }
 .album-pos { flex-shrink: 0; font-size: 11px; color: var(--muted); }
@@ -519,9 +532,14 @@ nav.tabs .tab-sub:empty { display: none; }
   display: flex; align-items: center; gap: 10px; flex-shrink: 0;
   padding: 10px 14px; background: rgba(0,0,0,.6);
 }
+/* 完整路徑要看得到：現場常有「115-9/2.蟑螂屋/23.丸龜製麵 (4F)/第二次」
+   這種深層路徑，截斷後最關鍵的末層目錄反而被吃掉。
+   允許換行、最多 3 行，寧可多佔兩行也不要讓人分不出這張要傳去哪。 */
 .viewer-path {
-  flex: 1; font-size: 13px; color: var(--muted);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  flex: 1; font-size: 13px; line-height: 1.4; color: var(--muted);
+  word-break: break-all; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+  overflow: hidden;
 }
 /* 圖片區吃掉剩餘空間；min-height:0 是必要的，
    否則 flex 子元素不會縮，圖片會把底部工具列擠出畫面外。 */
