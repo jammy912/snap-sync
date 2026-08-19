@@ -69,19 +69,21 @@
       <span class="caret">▼</span>
     </button>
     <div class="cam-wrap">
-      <video id="video" autoplay playsinline muted style="display:none"></video>
-      <div id="camPlaceholder">
-        點下方按鈕開啟相機<br>
-        <span style="font-size:13px">(需要相機權限)</span>
+      <!-- 沒有即時預覽了（改叫系統相機，見 camera.js 開頭的說明），
+           這裡改放最後拍好的那張，讓人確認剛剛那張拍成什麼樣 -->
+      <img id="lastShot" alt="" style="display:none">
+      <div id="camHint">
+        按下方快門開啟相機<br>
+        <span style="font-size:13px">閃光燈在相機畫面上切換（關／開／自動）</span>
       </div>
-      <!-- 未選目錄時的引導，蓋在相機畫面上，可直接點開選單 -->
+      <!-- 未選目錄時的引導，蓋在預覽區上，可直接點開選單 -->
       <button id="needTarget" style="display:none">
         <span class="big">請先選擇上傳目錄</span>
         <span class="sub">點這裡選擇</span>
       </button>
     </div>
-    <!-- 三欄配置：左（選目錄）／中（快門）／右（相機控制）。
-         用 grid 而非 flex 置中，右欄按鈕數量變動時快門才不會跟著偏移。 -->
+    <!-- 三欄配置：左（選目錄）／中（快門）／右（保留）。
+         用 grid 而非 flex 置中，右欄空著快門仍在正中央，不會偏移。 -->
     <div class="cam-controls">
       <div class="ctl-side left">
         <!-- 線條圖示（風格對齊康庭官網的 fontello 圖示字型）。
@@ -93,21 +95,17 @@
         </button>
       </div>
       <button class="shutter" id="shutterBtn" disabled></button>
-      <div class="ctl-side right">
-        <button class="icon-btn" id="switchBtn" title="切換鏡頭" aria-label="切換鏡頭" style="display:none">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M20 11a8 8 0 0 0-13.9-5.4M4 13a8 8 0 0 0 13.9 5.4"/>
-            <path d="M20 5v6h-6M4 19v-6h6"/>
-          </svg>
-        </button>
-        <button class="icon-btn" id="startCamBtn" title="開啟相機" aria-label="開啟相機">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.7l1.4-2h6.8l1.4 2h2.7A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>
-            <circle cx="12" cy="12.8" r="3.4"/>
-          </svg>
-        </button>
-      </div>
+      <!-- 右欄留空：開啟相機、切換鏡頭都由系統相機接手。
+           grid 的 1fr auto 1fr 仍成立，快門維持在正中央。 -->
+      <div class="ctl-side right"></div>
     </div>
+    <!--
+      ⚠️ 閃光燈就是靠這一行。
+      capture="environment" 讓 iOS／Android 直接開【後鏡頭系統相機】，
+      使用者在原生相機介面上切關／開／自動，網頁端無從也不需要控制。
+      不加 multiple：一次拍一張，拍完直接進佇列。
+    -->
+    <input type="file" id="camInput" accept="image/*" capture="environment" hidden>
   </section>
 
   <!-- 佇列 -->

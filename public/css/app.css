@@ -172,11 +172,13 @@ nav.tabs .tab-sub:empty { display: none; }
      min-height:0 讓預覽區乖乖吸收剩餘空間即可。 */
   overflow: hidden; min-height: 0;
 }
-#video { width: 100%; height: 100%; object-fit: cover; }
-#camPlaceholder { color: var(--muted); text-align: center; padding: 40px; font-size: 15px; line-height: 1.7; }
+/* 最後拍好的那張。用 contain 不用 cover：這是「確認拍到什麼」的預覽，
+   裁掉邊緣會讓人誤判構圖。 */
+#lastShot { width: 100%; height: 100%; object-fit: contain; }
+#camHint { color: var(--muted); text-align: center; padding: 40px; font-size: 15px; line-height: 1.7; }
 
-/* 1fr auto 1fr：左右兩欄等寬，快門永遠在正中央，
-   不會因為右欄多一顆「切換鏡頭」就跑掉。 */
+/* 1fr auto 1fr：左右兩欄等寬，快門永遠在正中央。
+   右欄目前空著（相機控制交給系統相機），快門仍不會偏移。 */
 .cam-controls {
   padding: 16px; display: grid; grid-template-columns: 1fr auto 1fr;
   gap: 12px; align-items: center; background: var(--panel); flex-shrink: 0;
@@ -216,8 +218,6 @@ nav.tabs .tab-sub:empty { display: none; }
   fill: none; stroke: currentColor; stroke-width: 1.8;
   stroke-linecap: round; stroke-linejoin: round;
 }
-/* 開啟相機是主要動作，用主色點出來 */
-#startCamBtn { color: var(--accent-bright); border-color: var(--accent); }
 
 /* ---------- 目錄樹 ---------- */
 /* 目錄選擇浮層（由下滑出，取代原本的「目錄」分頁） */
@@ -460,15 +460,6 @@ nav.tabs .tab-sub:empty { display: none; }
   .shutter { width: 52px; height: 52px; border-width: 3px; }
   .icon-btn { width: 46px; height: 46px; font-size: 22px; }
   .icon-btn svg { width: 22px; height: 22px; }
-
-  /* 提示使用者轉回直向會更好用 */
-  .cam-wrap::after {
-    content: '轉回直向拍攝效果較佳';
-    position: absolute; top: 8px; left: 50%; transform: translateX(-50%);
-    background: rgba(0,0,0,.62); color: #fff;
-    font-size: 11px; padding: 4px 10px; border-radius: 999px;
-    pointer-events: none; z-index: 6;
-  }
 }
 
 /* 送出成功的縮圖淡出後移除。傳送過程中不重繪整個 grid（會撤銷所有
