@@ -115,6 +115,16 @@ nav.tabs .tab-sub:empty { display: none; }
   background: var(--panel2); border: 1px solid var(--border);
   color: var(--text); font-size: 16px; /* 16px 可避免 iOS 聚焦時自動放大 */
 }
+/* 勾選列。⚠️ 必須覆寫上面 .field input 的 width:100%，
+   否則核取方塊會被拉成整條橫跨畫面。 */
+.check-row {
+  display: flex; align-items: center; gap: 10px;
+  font-size: 15px; color: var(--text); cursor: pointer;
+}
+.check-row input[type="checkbox"] {
+  width: 22px; height: 22px; flex: 0 0 auto; margin: 0;
+  accent-color: var(--accent);
+}
 .hint { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.6; }
 
 .btn {
@@ -175,13 +185,49 @@ nav.tabs .tab-sub:empty { display: none; }
 /* 最後拍好的那張。用 contain 不用 cover：這是「確認拍到什麼」的預覽，
    裁掉邊緣會讓人誤判構圖。點擊開放大檢視。 */
 #lastShot { width: 100%; height: 100%; object-fit: contain; cursor: pointer; }
-/* 拍完才顯示的操作提示。壓在預覽底部，不佔版面高度
-   （.cam-wrap 的高度是彈性的，多一個區塊會把控制列往下擠）。 */
-#camReviewTip {
-  position: absolute; left: 50%; bottom: 8px; transform: translateX(-50%);
-  background: rgba(0,0,0,.62); color: #fff;
-  font-size: 11px; padding: 4px 12px; border-radius: 999px;
-  pointer-events: none; z-index: 4; white-space: nowrap;
+/* ---------- 底片匣（拍照頁的相簿）---------- */
+/* 橫向捲動的一列縮圖。flex-shrink:0 讓它維持固定高度，
+   被壓縮的是上方彈性的預覽區，控制列才不會被擠出畫面。 */
+#camStripWrap {
+  flex-shrink: 0; background: var(--panel);
+  border-top: 1px solid var(--border); padding: 8px 12px 10px;
+}
+.strip-head {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--muted); margin-bottom: 6px;
+}
+.strip-head .spacer { flex: 1; }
+.cam-strip {
+  display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden;
+  /* 現場單手操作，慣性捲動比較好滑 */
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.cam-strip::-webkit-scrollbar { display: none; }
+.strip-cell {
+  position: relative; flex: 0 0 auto;
+  width: 76px; height: 76px; padding: 0;
+  border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--border); background: var(--panel2);
+  cursor: pointer;
+}
+.strip-cell img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 剛拍的那張用主色框出來，連拍時一眼認得出最新是哪張 */
+.strip-cell.is-last { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+/* 目標路徑疊在縮圖下緣：佇列可能混著多個目錄的照片，
+   只看圖分不出這張要傳去哪。 */
+.strip-path {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,.78));
+  color: #fff; font-size: 10px; line-height: 1.3;
+  padding: 8px 4px 3px; text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none;
+}
+.strip-badge {
+  position: absolute; top: 3px; right: 3px;
+  background: var(--danger); color: #fff;
+  font-size: 10px; padding: 1px 5px; border-radius: 999px;
 }
 #camHint { color: var(--muted); text-align: center; padding: 40px; font-size: 15px; line-height: 1.7; }
 

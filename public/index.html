@@ -72,7 +72,6 @@
       <!-- 沒有即時預覽了（改叫系統相機，見 camera.js 開頭的說明），
            這裡改放最後拍好的那張，讓人確認剛剛那張拍成什麼樣 -->
       <img id="lastShot" alt="剛拍好的照片，點擊可放大檢視" style="display:none">
-      <div id="camReviewTip" style="display:none">點照片可放大檢視 · 左右滑換張 · 可刪除重拍</div>
       <div id="camHint">
         按下方快門開啟相機<br>
         <span style="font-size:13px">閃光燈在相機畫面上切換（關／開／自動）</span>
@@ -82,6 +81,17 @@
         <span class="big">請先選擇上傳目錄</span>
         <span class="sub">點這裡選擇</span>
       </button>
+    </div>
+    <!-- 底片匣：拍照頁的相簿。進頁面就把佇列的照片載出來橫向排開，
+         不必切到佇列分頁就知道這個目錄已經拍了哪些、拍了幾張。
+         點縮圖開放大檢視（可左右滑瀏覽、放大、刪除）。 -->
+    <div id="camStripWrap" style="display:none">
+      <div class="strip-head">
+        <span>已拍攝</span>
+        <span class="spacer"></span>
+        <span id="camStripCount"></span>
+      </div>
+      <div id="camStrip" class="cam-strip"></div>
     </div>
     <!-- 三欄配置：左（選目錄）／中（快門）／右（保留）。
          用 grid 而非 flex 置中，右欄空著快門仍在正中央，不會偏移。 -->
@@ -154,6 +164,14 @@
       <input type="number" id="quality" value="0.8" min="0.1" max="1" step="0.05">
       <div class="hint">建議 0.8。調低省流量但細線條與文字會出現壓縮雜訊；
         0.9 以上檔案約翻倍、畫質提升卻有限。</div>
+    </div>
+    <div class="field">
+      <label class="check-row" for="autoReview">
+        <input type="checkbox" id="autoReview" checked>
+        <span>拍完立即放大檢視</span>
+      </label>
+      <div class="hint">拍完馬上跳出大圖確認清不清楚，關掉後改為只在下方底片匣顯示縮圖。
+        連拍時嫌礙事可關閉。</div>
     </div>
     <div class="field">
       <label for="endpointOverride">端點網址覆寫（選填）</label>

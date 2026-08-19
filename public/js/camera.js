@@ -116,6 +116,19 @@ App.camera = (function () {
 
         App.db.add(rec).then(function () {
           showLastShot(blob, id);
+
+          // 拍完立即檢視（設定可關）。
+          //
+          // 現場最痛的是回辦公室才發現照片糊掉、或門牌沒入鏡，那時已經
+          // 無法補拍。縮圖太小看不出對焦有沒有跑掉，一定要放大才看得準。
+          // 只排這一張（single=true）：此刻要確認的是「剛拍的這張」，
+          // 排進整個佇列的話手一滑就跑到別張，反而分不清在看哪一張。
+          if (App.app.settings().autoReview !== false) {
+            App.queue.openViewerById(id, true);
+          }
+
+          renderStrip();      // 新拍的那張要立刻出現在底片匣
+
           // 只講最後一層目錄與大小，維持單行。
           // 完整路徑已常駐在上方的「上傳至」列，這裡重複只會把 toast 撐成兩行。
           var parts = target.split('/');
@@ -136,7 +149,7 @@ App.camera = (function () {
   }
 
   /**
-   * 顯示剛拍好的那張。
+   * 顯示剛拍好的那張（大圖預覽）。
    * 沒有即時預覽之後，這塊空著會讓人以為相機壞了；擺上最後一張
    * 至少能確認「剛剛那張拍進去了、拍成什麼樣」。
    * 點下去會開放大檢視（可左右滑、放大、刪除），拍糊了當場就能重拍。
@@ -153,28 +166,118 @@ App.camera = (function () {
     img.style.display = 'block';
     var hint = $('camHint');
     if (hint) hint.style.display = 'none';
-    var tip = $('camReviewTip');
-    if (tip) tip.style.display = 'block';
+  }
+
+  /* ---------- 底片匣（拍照頁的相簿）---------- */
+
+  // ⚠️ 這批 URL 必須【自己管】，不可共用 queue 的 objectURLs。
+  //    queue.render() 會 revoke 掉它那批的全部；共用的話，佇列頁一重繪
+  //    （傳送時會密集觸發）就把底片匣的網址一起撤銷，這裡整排變破圖。
+  //    那正是先前「整頁縮圖同時變成預覽讀取失敗」的同一類競態。
+  var stripURLs = [];
+  var stripSeq = 0;
+
+  function revokeStrip() {
+    stripURLs.forEach(function (u) { URL.revokeObjectURL(u); });
+    stripURLs = [];
   }
 
   /**
-   * 那張預覽的照片被刪掉了（在放大檢視裡刪的），把預覽收掉。
-   * 不處理的話畫面還留著一張已經不存在的照片，點下去會開不起來。
+   * 重畫底片匣：把佇列裡的照片依拍攝時間（新的在前）排成一列縮圖。
+   * 進到拍照頁就看得到已經拍了哪些，像相簿一樣，不必切分頁確認。
    */
-  function notifyRemoved(id) {
-    if (id && id === lastId) { stop(); }
+  function renderStrip() {
+    var strip = $('camStrip');
+    if (!strip) return Promise.resolve();
+
+    // 世代編號：連拍時會密集呼叫，過期的那次不可動 DOM 與 URL
+    var seq = ++stripSeq;
+
+    return App.db.all().then(function (recs) {
+      if (seq !== stripSeq) { return; }
+
+      recs.sort(function (a, b) {
+        return new Date(b.capturedAt) - new Date(a.capturedAt);
+      });
+
+      revokeStrip();
+      strip.innerHTML = '';
+
+      var wrap = $('camStripWrap');
+      if (wrap) { wrap.style.display = recs.length ? 'block' : 'none'; }
+      var hint = $('camHint');
+      if (hint && recs.length) { hint.style.display = 'none'; }
+
+      recs.forEach(function (r) {
+        if (!(r.blob instanceof Blob)) return;
+        var url = URL.createObjectURL(r.blob);
+        stripURLs.push(url);
+
+        var cell = document.createElement('button');
+        cell.className = 'strip-cell' + (r.id === lastId ? ' is-last' : '');
+        cell.type = 'button';
+
+        var im = document.createElement('img');
+        im.alt = '';
+        im.src = url;
+        cell.appendChild(im);
+
+        if (r.retryCount > 0) {
+          var b = document.createElement('span');
+          b.className = 'strip-badge';
+          b.textContent = '!' + r.retryCount;
+          cell.appendChild(b);
+        }
+
+        // 疊上目標路徑：佇列裡可能混著好幾個目錄的照片，
+        // 只看縮圖分不出這張要傳去哪，換目錄後更容易誤判。
+        // 位置有限，顯示最後一層（完整路徑在放大檢視裡看得到）。
+        var cap = document.createElement('span');
+        cap.className = 'strip-path';
+        var segs = (r.targetPath || '').split('/');
+        cap.textContent = segs[segs.length - 1] || '—';
+        cap.title = r.targetPath || '';
+        cell.appendChild(cap);
+
+        // 點縮圖開放大檢視，可左右滑瀏覽整個佇列
+        cell.onclick = function () { App.queue.openViewerById(r.id); };
+        strip.appendChild(cell);
+      });
+
+      var cnt = $('camStripCount');
+      if (cnt) { cnt.textContent = recs.length ? recs.length + ' 張待傳' : ''; }
+    });
   }
 
-  /** 登出時清掉畫面上的最後一張，換人登入不該看到前一個人的照片 */
+  /**
+   * 那張預覽的照片被刪掉了（或已上傳成功而移除）。
+   * 大圖預覽指著它就要收掉，否則點下去開不起檢視器；
+   * 底片匣也要跟著重畫，不然會留著一張已不存在的縮圖。
+   */
+  function notifyRemoved(id) {
+    if (id && id === lastId) {
+      var img = $('lastShot');
+      if (img) { img.removeAttribute('src'); img.style.display = 'none'; }
+      if (lastUrl) { URL.revokeObjectURL(lastUrl); lastUrl = null; }
+      lastId = null;
+    }
+    renderStrip();
+  }
+
+  /** 登出時清空畫面，換人登入不該看到前一個人的照片 */
   function stop() {
     var img = $('lastShot');
     if (img) { img.removeAttribute('src'); img.style.display = 'none'; }
     if (lastUrl) { URL.revokeObjectURL(lastUrl); lastUrl = null; }
     lastId = null;
+
+    revokeStrip();
+    var strip = $('camStrip');
+    if (strip) strip.innerHTML = '';
+    var wrap = $('camStripWrap');
+    if (wrap) wrap.style.display = 'none';
     var hint = $('camHint');
     if (hint) hint.style.display = '';
-    var tip = $('camReviewTip');
-    if (tip) tip.style.display = 'none';
   }
 
   function init() {
@@ -183,6 +286,8 @@ App.camera = (function () {
 
     // 點預覽開放大檢視。檢視器是佇列頁那一套（左右滑換張、點圖放大、
     // 刪除），不另外做一份——重複實作遲早會有一邊漏修。
+    // 這裡【不傳 single】：主動點進來是想回頭看，可左右滑瀏覽整個佇列；
+    // 拍完自動跳出的那次才只鎖定單張。
     var last = $('lastShot');
     if (last) {
       last.onclick = function () {
@@ -196,6 +301,6 @@ App.camera = (function () {
 
   return {
     init: init, stop: stop, refreshShutterState: refreshShutterState,
-    notifyRemoved: notifyRemoved
+    notifyRemoved: notifyRemoved, renderStrip: renderStrip
   };
 })();

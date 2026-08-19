@@ -48,6 +48,8 @@ App.queue = (function () {
    */
   function removePhoto(id) {
     return App.db.remove(id).then(function () {
+      // notifyRemoved 會收掉大圖預覽（若指著這張）並重畫底片匣，
+      // 上傳成功、單張刪除、多選刪除三條路徑都會走到這裡
       if (App.camera && App.camera.notifyRemoved) { App.camera.notifyRemoved(id); }
     });
   }
@@ -615,14 +617,24 @@ App.queue = (function () {
   }
 
   /**
-   * 從佇列【以外】的地方打開檢視器（目前是拍照頁點預覽）。
+   * 從佇列【以外】的地方打開檢視器（目前是拍照頁）。
    *
    * viewList 平常只由 render() 建立，而 render() 只在佇列頁跑；
    * 直接呼叫 openViewer 會因為 viewList 是空的而開不起來。
-   * 這裡自己撈一次並沿用同樣的排序（新的在前），
-   * 左右滑的順序才會跟佇列頁看到的一致。
+   *
+   * @param id      要看哪一張
+   * @param single  true = 只看這一張（拍完立即檢視）。
+   *                拍完馬上跳出來是要「確認這張拍得清不清楚」，
+   *                此時把整個佇列排進序列，手滑一滑就跑到別張，
+   *                使用者會分不清現在確認的是不是剛拍的那張。
+   *                false = 整個佇列都排進來，可左右滑瀏覽。
    */
-  function openViewerById(id) {
+  function openViewerById(id, single) {
+    if (single) {
+      viewList = [id];
+      openViewer(id);
+      return Promise.resolve();
+    }
     return App.db.all().then(function (recs) {
       recs.sort(function (a, b) {
         return new Date(b.capturedAt) - new Date(a.capturedAt);

@@ -11,10 +11,12 @@ App.app = (function () {
   // ⚠️ 改版時要跟 sw.js 的 CACHE 版本號一起遞增，兩者必須一致。
   // 顯示在標題右側，讓現場回報問題時能直接確認手機上跑的是哪一版——
   // PWA 會快取前端資源，「我已經部署了」不等於「使用者拿到了」。
-  var VERSION = 'v25';
+  var VERSION = 'v26';
 
   var SETTINGS_KEY = 'ss_settings';
-  var settings = { maxEdge: 1600, quality: 0.8 };
+  // autoReview：拍完立刻跳出放大檢視，當場確認清不清楚。
+  // 預設開啟——現場最痛的是回辦公室才發現照片糊掉，那時已經無法補拍。
+  var settings = { maxEdge: 1600, quality: 0.8, autoReview: true };
 
   function loadSettings() {
     try {
@@ -23,12 +25,14 @@ App.app = (function () {
     } catch (e) {}
     $('maxEdge').value = settings.maxEdge;
     $('quality').value = settings.quality;
+    $('autoReview').checked = settings.autoReview !== false;
     $('endpointOverride').value = App.api.getOverride();
   }
 
   function saveSettings() {
     settings.maxEdge = Math.min(4000, Math.max(400, parseInt($('maxEdge').value, 10) || 1600));
     settings.quality = Math.min(1, Math.max(0.1, parseFloat($('quality').value) || 0.8));
+    settings.autoReview = $('autoReview').checked;
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
     $('maxEdge').value = settings.maxEdge;
     $('quality').value = settings.quality;
@@ -54,6 +58,9 @@ App.app = (function () {
     if (tab !== 'queue' && App.queue.isSelecting()) { App.queue.exitSelect(); }
 
     if (tab === 'queue') App.queue.render();
+    // 回到拍照頁就重畫底片匣：離開期間可能傳掉或刪掉了幾張，
+    // 而且 iOS 在背景會回收 blob 資源，舊的 objectURL 已經失效
+    if (tab === 'camera') App.camera.renderStrip();
   }
 
   function updateNet() {
@@ -78,6 +85,10 @@ App.app = (function () {
       return App.tree.refresh(true);      // 靜默更新目錄樹
     }).then(function () {
       return App.queue.refreshBadge();
+    }).then(function () {
+      // 一進來就把佇列的照片載進拍照頁的底片匣（像相簿），
+      // 不必切到佇列分頁才知道已經拍了哪些
+      return App.camera.renderStrip();
     }).then(function () {
       // 沒按過「傳送」的照片不會自動送（拍到一半、還沒檢查的不該偷跑）；
       // 但上次已按過傳送、只是沒送完的，開 App 就接著送完。
