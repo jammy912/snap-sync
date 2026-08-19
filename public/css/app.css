@@ -183,6 +183,43 @@ nav.tabs .tab-sub:empty { display: none; }
   display: flex; flex-direction: column;
   overflow: hidden; min-height: 0;
 }
+/* ---------- 即時拍照（蓋在相簿之上）---------- */
+#liveWrap {
+  position: absolute; inset: 0; z-index: 3;
+  display: flex; align-items: center; justify-content: center;
+  background: #000;
+}
+/* cover 填滿預覽區：即時預覽是「取景」用，滿版比較好構圖；
+   實際存檔是從 video 原始畫面抓的，不受這裡的裁切影響。 */
+#video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.live-top {
+  position: absolute; top: 0; left: 0; right: 0;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; background: linear-gradient(rgba(0,0,0,.62), transparent);
+}
+.live-top .spacer { flex: 1; font-size: 12px; color: #fff; opacity: .85; }
+.live-tag {
+  font-size: 11px; color: #fff; background: rgba(0,0,0,.45);
+  padding: 3px 9px; border-radius: 999px; flex-shrink: 0;
+}
+.live-btn {
+  width: 38px; height: 38px; flex-shrink: 0;
+  border-radius: 50%; border: 1px solid rgba(255,255,255,.28);
+  background: rgba(0,0,0,.42); color: #fff;
+  font-size: 17px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.live-btn svg { width: 20px; height: 20px; display: block; }
+.live-btn svg path, .live-btn svg circle {
+  fill: none; stroke: currentColor; stroke-width: 1.8;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* 閃光燈開啟時整顆點亮，現場一眼看得出燈是不是還開著（很耗電） */
+.live-btn.is-on {
+  background: var(--accent); border-color: var(--accent); color: #06231f;
+}
+.live-btn.is-on svg path { fill: currentColor; }
+
 /* ---------- 相簿（拍照頁中間那一大片）：一次一張大圖，左右滑換張 ---------- */
 /* ⚠️ min-height:0 不可省：flex 子項的預設 min-height 是 auto，
    照片會把容器撐開，把下方的快門列擠出畫面（.cam-wrap 那條踩過的坑

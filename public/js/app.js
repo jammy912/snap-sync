@@ -11,7 +11,7 @@ App.app = (function () {
   // ⚠️ 改版時要跟 sw.js 的 CACHE 版本號一起遞增，兩者必須一致。
   // 顯示在標題右側，讓現場回報問題時能直接確認手機上跑的是哪一版——
   // PWA 會快取前端資源，「我已經部署了」不等於「使用者拿到了」。
-  var VERSION = 'v28';
+  var VERSION = 'v29';
 
   var SETTINGS_KEY = 'ss_settings';
   // autoReview：拍完再自動跳出全螢幕檢視器。
@@ -63,6 +63,9 @@ App.app = (function () {
     // 回到拍照頁就重讀相簿：離開期間可能傳掉或刪掉了幾張，
     // 而且 iOS 在背景會回收 blob 資源，舊的 objectURL 已經失效
     if (tab === 'camera') App.camera.renderStrip();
+    // 離開拍照頁就關掉即時相機：省電、把鏡頭放開給別的 App，
+    // 也避免使用者切走後以為相機還開著
+    else App.camera.exitLive();
   }
 
   function updateNet() {

@@ -31,7 +31,10 @@ App.camera = (function () {
     $('shutterBtn').disabled = !App.tree.selectedPath() || busy;
   }
 
-  /** 按快門＝叫出系統相機 */
+  /**
+   * 按快門。即時拍照開著就從預覽抓一格，否則叫出系統相機。
+   * 同一顆快門兩種行為，現場不必記「哪個模式要按哪顆」。
+   */
   function shoot() {
     if (busy) return;
     if (!App.tree.selectedPath()) {
@@ -39,6 +42,7 @@ App.camera = (function () {
       App.tree.openSheet();
       return;
     }
+    if (liveOn()) { captureLive(); return; }
     $('camInput').click();
   }
 
@@ -100,50 +104,181 @@ App.camera = (function () {
 
       c.toBlob(function (blob) {
         if (!blob) { done(); toast('拍照失敗'); return; }
-        var id = App.util.uuid();
-        var rec = {
-          id: id,
-          targetPath: target,
-          fileName: App.util.stampForName(capturedAt) + '_' + id.slice(0, 8) + '.jpg',
-          capturedAt: capturedAt,
-          blob: blob,
-          w: w, h: h,
-          size: blob.size,
-          status: 'pending',
-          retryCount: 0,
-          lastError: ''
-        };
-
-        App.db.add(rec).then(function () {
-          lastId = id;
-          renderStrip(id);    // 立刻跳到新拍的這張
-
-          // 拍完再自動跳出全螢幕檢視器（預設關閉）。
-          // 上一行的 renderStrip 已經把這張顯示在中間整片大圖了，
-          // 通常不必再疊一層；要更大或想直接刪除的人才開這個設定。
-          // 只排這一張（single=true）：此刻要確認的是「剛拍的這張」，
-          // 排進整個佇列的話手一滑就跑到別張，反而分不清在看哪一張。
-          if (App.app.settings().autoReview === true) {
-            App.queue.openViewerById(id, true);
-          }
-
-          // 只講最後一層目錄與大小，維持單行。
-          // 完整路徑已常駐在上方的「上傳至」列，這裡重複只會把 toast 撐成兩行。
-          var parts = target.split('/');
-          toast('已存至 ' + parts[parts.length - 1] + ' · ' + App.util.fmtSize(blob.size));
-          // 【不自動上傳】拍完只入佇列，等使用者確認完按「傳送」才送。
-          // 原本拍一張就送一張，會在連拍時邊拍邊佔網路，
-          // 也讓「拍錯想刪掉重拍」變得來不及——照片早就上雲端了。
-          App.queue.refreshBadge();
-          done();
-        }).catch(function (e) {
-          done();
-          toast('儲存失敗：' + e.message);
-        });
+        saveShot(blob, w, h, target, capturedAt).then(done, done);
       }, 'image/jpeg', st.quality);
     };
 
     img.src = url;
+  }
+
+  /**
+   * 把壓好的照片寫進佇列並更新畫面。
+   *
+   * ⚠️ 系統相機與即時拍照【共用】這一段，不要各寫一份。
+   *    兩條路徑只有「取像方式」不同，存檔規則（檔名時間戳、不自動上傳、
+   *    存完跳到新拍那張）完全一樣；分開寫遲早只修到其中一邊。
+   */
+  function saveShot(blob, w, h, target, capturedAt) {
+    var id = App.util.uuid();
+    var rec = {
+      id: id,
+      targetPath: target,
+      fileName: App.util.stampForName(capturedAt) + '_' + id.slice(0, 8) + '.jpg',
+      capturedAt: capturedAt,
+      blob: blob,
+      w: w, h: h,
+      size: blob.size,
+      status: 'pending',
+      retryCount: 0,
+      lastError: ''
+    };
+
+    return App.db.add(rec).then(function () {
+      lastId = id;
+      renderStrip(id);    // 立刻跳到新拍的這張
+
+      // 拍完再自動跳出全螢幕檢視器（預設關閉）。
+      // 上一行的 renderStrip 已經把這張顯示在中間整片大圖了，
+      // 通常不必再疊一層；要更大或想直接刪除的人才開這個設定。
+      // 只排這一張（single=true）：此刻要確認的是「剛拍的這張」，
+      // 排進整個佇列的話手一滑就跑到別張，反而分不清在看哪一張。
+      if (App.app.settings().autoReview === true) {
+        App.queue.openViewerById(id, true);
+      }
+
+      // 只講最後一層目錄與大小，維持單行。
+      // 完整路徑已常駐在上方的「上傳至」列，這裡重複只會把 toast 撐成兩行。
+      var parts = target.split('/');
+      toast('已存至 ' + parts[parts.length - 1] + ' · ' + App.util.fmtSize(blob.size));
+      // 【不自動上傳】拍完只入佇列，等使用者確認完按「傳送」才送。
+      // 原本拍一張就送一張，會在連拍時邊拍邊佔網路，
+      // 也讓「拍錯想刪掉重拍」變得來不及——照片早就上雲端了。
+      App.queue.refreshBadge();
+    }).catch(function (e) {
+      toast('儲存失敗：' + e.message);
+    });
+  }
+
+  /* ---------- 即時拍照（App 內預覽，Android 可開閃光燈）---------- */
+
+  // ⚠️ 閃光燈只有 Android Chrome 有：track.applyConstraints({advanced:[{torch:true}]})。
+  //    iOS Safari 沒實作 torch，getCapabilities() 不回傳這個欄位（見檔頭說明），
+  //    所以 iOS 開了即時拍照也看不到閃光燈鍵——這是平台限制，不是壞掉。
+  //    要閃光燈的 iOS 使用者請用左邊的系統相機鍵。
+  var stream = null;
+  var track = null;
+  var torchOn = false;
+  var facingMode = 'environment';
+
+  function liveOn() { return !!stream; }
+
+  /** 這支裝置／這顆鏡頭支不支援閃光燈 */
+  function hasTorch() {
+    if (!track || !track.getCapabilities) return false;
+    try { return !!track.getCapabilities().torch; } catch (e) { return false; }
+  }
+
+  function startLive() {
+    stopLive();
+    return navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: facingMode }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      audio: false
+    }).then(function (s) {
+      stream = s;
+      track = s.getVideoTracks()[0] || null;
+      torchOn = false;
+
+      var v = $('video');
+      v.srcObject = s;
+      $('liveWrap').style.display = 'flex';
+      $('albumWrap').style.display = 'none';
+      $('camHint').style.display = 'none';
+      refreshLiveUI();
+      refreshShutterState();
+    }).catch(function (e) {
+      toast('無法開啟相機：' + (e.message || e.name));
+      stopLive();
+      refreshShutterState();
+    });
+  }
+
+  function stopLive() {
+    // 一定要 stop 每一條 track，否則相機燈號會一直亮著、也擋住其他 App 用相機
+    if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); }
+    stream = null; track = null; torchOn = false;
+
+    var v = $('video');
+    if (v) { v.srcObject = null; }
+    var lw = $('liveWrap');
+    if (lw) lw.style.display = 'none';
+  }
+
+  /** 關掉即時拍照，回到相簿 */
+  function exitLive() {
+    stopLive();
+    refreshShutterState();
+    return renderStrip();
+  }
+
+  function refreshLiveUI() {
+    var t = $('torchBtn');
+    if (t) {
+      // 不支援就整顆藏起來，留著只會讓人一直按卻沒反應
+      t.style.display = hasTorch() ? 'flex' : 'none';
+      t.classList.toggle('is-on', torchOn);
+      t.setAttribute('aria-pressed', torchOn ? 'true' : 'false');
+    }
+  }
+
+  function toggleTorch() {
+    if (!track || !hasTorch()) { toast('這支裝置不支援閃光燈'); return; }
+    var next = !torchOn;
+    track.applyConstraints({ advanced: [{ torch: next }] }).then(function () {
+      torchOn = next;
+      refreshLiveUI();
+    }).catch(function (e) {
+      toast('閃光燈切換失敗：' + (e.message || e.name));
+    });
+  }
+
+  function switchCam() {
+    facingMode = (facingMode === 'environment') ? 'user' : 'environment';
+    return startLive();
+  }
+
+  /** 即時拍照的快門：從 video 抓一格畫面 */
+  function captureLive() {
+    var v = $('video');
+    if (!v || !v.videoWidth) { toast('相機尚未就緒'); return; }
+
+    var target = App.tree.selectedPath();
+    if (!target) { toast('請先選擇上傳目錄'); App.tree.openSheet(); return; }
+
+    var capturedAt = new Date().toISOString();
+    var w = v.videoWidth, h = v.videoHeight;
+    var st = App.app.settings();
+    if (Math.max(w, h) > st.maxEdge) {
+      var scale = st.maxEdge / Math.max(w, h);
+      w = Math.round(w * scale);
+      h = Math.round(h * scale);
+    }
+
+    var c = $('canvas');
+    c.width = w; c.height = h;
+    c.getContext('2d').drawImage(v, 0, 0, w, h);
+
+    busy = true;
+    refreshShutterState();
+    c.toBlob(function (blob) {
+      if (!blob) { busy = false; refreshShutterState(); toast('拍照失敗'); return; }
+      saveShot(blob, w, h, target, capturedAt).then(function () {
+        busy = false;
+        refreshShutterState();
+      }, function () {
+        busy = false;
+        refreshShutterState();
+      });
+    }, 'image/jpeg', st.quality);
   }
 
   /* ---------- 相簿：一次一張大圖，左右滑換張 ---------- */
@@ -224,6 +359,17 @@ App.camera = (function () {
       });
       album = recs;
 
+      // ⚠️ 即時拍照開著時只更新資料，不可動版面。
+      //    saveShot 每拍一張都會呼叫這裡；不擋的話相簿會蓋掉即時預覽，
+      //    連拍時每按一次快門就被踢出即時模式一次。
+      //    序列已更新，關掉即時拍照時 renderStrip 會再跑一次把畫面補上。
+      if (liveOn()) {
+        albumIdx = 0;
+        var lc = $('liveCount');
+        if (lc) { lc.textContent = recs.length ? '已拍 ' + recs.length + ' 張' : ''; }
+        return;
+      }
+
       var wrap = $('albumWrap');
       var hint = $('camHint');
       if (!recs.length) {
@@ -259,6 +405,7 @@ App.camera = (function () {
 
   /** 登出時清空相簿，換人登入不該看到前一個人的照片 */
   function stop() {
+    stopLive();          // 相機一定要關，否則登出後鏡頭燈號還亮著
     lastId = null;
     album = [];
     albumIdx = 0;
@@ -274,6 +421,18 @@ App.camera = (function () {
   function init() {
     $('shutterBtn').onclick = shoot;
     $('camInput').onchange = onPicked;
+
+    // 即時拍照：開啟／關閉、閃光燈、切換鏡頭
+    $('liveBtn').onclick = function () { startLive(); };
+    $('liveCloseBtn').onclick = function () { exitLive(); };
+    $('torchBtn').onclick = toggleTorch;
+    $('liveSwitchBtn').onclick = switchCam;
+
+    // 切走分頁或 App 進背景就關相機：省電、放開鏡頭給別的 App，
+    // 也避免使用者以為還在錄影。回來時停在相簿，要拍再按一次。
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState !== 'visible' && liveOn()) { exitLive(); }
+    });
 
     $('albumPrev').onclick = function () { showAt(albumIdx - 1); };
     $('albumNext').onclick = function () { showAt(albumIdx + 1); };
@@ -309,6 +468,7 @@ App.camera = (function () {
 
   return {
     init: init, stop: stop, refreshShutterState: refreshShutterState,
-    notifyRemoved: notifyRemoved, renderStrip: renderStrip
+    notifyRemoved: notifyRemoved, renderStrip: renderStrip,
+    exitLive: exitLive
   };
 })();
