@@ -112,6 +112,38 @@ App.queue = (function () {
     }).catch(function () { /* 清不掉不影響主流程 */ });
   }
 
+  /* ---------- 傳送期間保持螢幕不休眠 ---------- */
+
+  // ⚠️ 這不是「方便」而已，是【正確性】問題。
+  //    iOS 螢幕關閉後會暫停 JavaScript 執行，傳到一半的佇列就停在那裡——
+  //    使用者以為在傳，實際上什麼都沒動，回來才發現還剩一堆。
+  //    一次傳一兩百張要好幾分鐘，中途放下手機是常態。
+  //
+  //    用能力偵測而非平台判斷（iOS Safari 16.4+ 起支援）。
+  //    ——不要再假設「iOS 沒有」，torch 那次已經證明這種假設會過期。
+  var wakeLock = null;
+
+  function acquireWakeLock() {
+    if (!('wakeLock' in navigator) || wakeLock) return;
+    try {
+      navigator.wakeLock.request('screen').then(function (lock) {
+        // 已經傳完才拿到就直接放掉，避免螢幕白亮著
+        if (!flushing) { lock.release().catch(function () {}); return; }
+        wakeLock = lock;
+        // 系統可能自行釋放（例如電量過低），此時清掉參照，
+        // 下次 visibilitychange 才會重新申請
+        lock.addEventListener('release', function () { wakeLock = null; });
+      }).catch(function () { /* 不支援或被拒絕：傳送照常，只是螢幕會暗 */ });
+    } catch (e) { /* 舊瀏覽器 */ }
+  }
+
+  function releaseWakeLock() {
+    if (!wakeLock) return;
+    var lock = wakeLock;
+    wakeLock = null;
+    try { lock.release().catch(function () {}); } catch (e) {}
+  }
+
   /** 取出所有待送（未送出）的記錄 */
   function pendingOf(recs) {
     return recs.filter(function (r) { return r.status !== 'sent'; });
@@ -291,6 +323,7 @@ App.queue = (function () {
 
     flushing = true;
     cancelRequested = false;      // 每次開始傳送都重置，否則上一輪的取消會殘留
+    acquireWakeLock();            // 傳送期間別讓螢幕休眠（見該函式的說明）
     var ok = 0, fail = 0, authFailed = false, cancelled = false;
 
     // 反向情況：已在選取模式時傳送啟動了（例如自動重送、恢復連線續送）。
@@ -413,6 +446,7 @@ App.queue = (function () {
       var wasCancelled = cancelRequested;
       flushing = false;
       cancelRequested = false;
+      releaseWakeLock();          // 傳送結束就放開，這東西很耗電
 
       // ⚠️ 使用者按過取消：把剩下的照片退回【未確認】＝「還沒按過傳送」。
       //    只停計時器不夠——confirmed 還掛著的話畫面會說
@@ -1074,6 +1108,10 @@ App.queue = (function () {
     // 不主動重繪的話，使用者會先看到一整片「預覽讀取失敗」才逐張救回。
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState !== 'visible') return;
+      // ⚠️ 切到背景時瀏覽器會自動釋放 wake lock，回到前景【必須重新申請】，
+      //    否則第二次之後螢幕照樣會暗掉——這是 Wake Lock API 的規定行為，
+      //    不是我們的 bug。還在傳才申請。
+      if (flushing) { acquireWakeLock(); }
       if ($('queueView').classList.contains('active')) { render(); }
     });
 
