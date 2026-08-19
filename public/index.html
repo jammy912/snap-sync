@@ -68,10 +68,10 @@
       <span class="value unset" id="targetLabel">尚未選擇目錄</span>
       <span class="caret">▼</span>
     </button>
-    <!-- 中間這一大片就是相簿：一次顯示一張大圖，左右滑換張。
+    <!-- 中間這一大片：相機關著時是相簿（一次一張大圖，左右滑換張），
+         開著時被相機預覽蓋住。
          不做縮圖牆——現場要看的是「這張拍清楚了沒」，縮圖太小看不出
-         對焦有沒有跑掉。沒有即時預覽（改叫系統相機，見 camera.js
-         開頭的說明），這片空間全部給照片用。 -->
+         對焦有沒有跑掉。 -->
     <div class="cam-wrap">
       <div id="albumWrap" style="display:none">
         <div class="album-stage" id="albumStage">
@@ -224,13 +224,13 @@
       <div id="treeRoot"></div>
       <div class="empty" id="treeEmpty" style="display:none">
         尚無目錄資料<br>
-        <span style="font-size:13px">請確認內部排程已推送目錄樹，然後按下方「重新整理」</span>
+        <span style="font-size:13px">請確認內部排程已推送目錄樹，然後按下方「更新目錄」</span>
       </div>
     </div>
     <div class="sheet-foot">
       <span id="treeInfo">—</span>
       <span class="spacer"></span>
-      <button class="mini-btn" id="refreshTreeBtn">重新整理</button>
+      <button class="mini-btn" id="refreshTreeBtn">更新目錄</button>
     </div>
   </div>
 </div>

@@ -325,9 +325,12 @@ nav.tabs .tab-sub:empty { display: none; }
 /* 線條圖示：統一描邊寬度與圓端點，風格對齊康庭官網的圖示字型。
    fill:none + stroke:currentColor 讓圖示跟著按鈕文字色，
    停用或改主色時不必另外處理。 */
-.icon-btn svg { width: 28px; height: 28px; display: block; }
+/* 圖示放大 30%（28→36px）：現場戴手套、陽光下看，原本偏小不好辨識。
+   按鈕圓圈維持 60px 不變，只是裡面的線圖變大。 */
+.icon-btn svg { width: 36px; height: 36px; display: block; }
 .icon-btn svg path, .icon-btn svg circle, .icon-btn svg rect, .icon-btn svg line {
-  fill: none; stroke: currentColor; stroke-width: 1.8;
+  /* 描邊隨圖放大等比加粗（1.8→2.2），否則線條相對變細、看起來更淡 */
+  fill: none; stroke: currentColor; stroke-width: 2.2;
   stroke-linecap: round; stroke-linejoin: round;
 }
 
@@ -571,7 +574,7 @@ nav.tabs .tab-sub:empty { display: none; }
   .cam-controls { padding: 8px 16px; }
   .shutter { width: 52px; height: 52px; border-width: 3px; }
   .icon-btn { width: 46px; height: 46px; font-size: 22px; }
-  .icon-btn svg { width: 22px; height: 22px; }
+  .icon-btn svg { width: 29px; height: 29px; }   /* 同步放大 30%（22→29） */
 }
 
 /* 送出成功的縮圖淡出後移除。傳送過程中不重繪整個 grid（會撤銷所有
