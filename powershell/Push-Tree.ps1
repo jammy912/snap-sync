@@ -87,7 +87,13 @@ param(
 )
 
 # 補上路徑類參數的預設值（見上方 param 區塊的說明：那裡不能用 $PSScriptRoot）
-if (-not $LogFile)        { $LogFile        = Join-Path $PSScriptRoot 'logs\push-tree.log' }
+#
+# 記錄檔一天一個（push-tree-20260819.log）：單一檔案跑久了會膨脹到難以開啟，
+# 出事要查「昨天那一輪」也得在幾十萬行裡撈。按日切檔後直接開當天那個即可。
+# ⚠️ 只有【記錄檔】按日切；tree-snapshot / last-alert 是跨日累積的狀態檔，
+#    切檔會讓比對基準消失（每天都被當成全新目錄樹而誤發變更通知）；
+#    daily-*.csv 是彙總報表，本來就是一檔多列。
+if (-not $LogFile)        { $LogFile        = Join-Path $PSScriptRoot ('logs\push-tree-{0}.log' -f (Get-Date -Format 'yyyyMMdd')) }
 if (-not $SnapshotFile)   { $SnapshotFile   = Join-Path $PSScriptRoot 'logs\tree-snapshot.json' }
 if (-not $AlertStateFile) { $AlertStateFile = Join-Path $PSScriptRoot 'logs\last-alert.json' }
 if (-not $SummaryFile)    { $SummaryFile    = Join-Path $PSScriptRoot 'logs\daily-push-tree.csv' }

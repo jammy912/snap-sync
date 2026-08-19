@@ -31,7 +31,10 @@ param(
     [string] $ConfigPath
 )
 
-if (-not $LogFile)     { $LogFile     = Join-Path $PSScriptRoot 'logs\sync-queue.log' }
+# 記錄檔一天一個（sync-queue-20260819.log）。理由同 Push-Tree.ps1：
+# 單一檔案跑久了會膨脹到難以開啟，查特定某天也得在幾十萬行裡撈。
+# daily-*.csv 是彙總報表不切檔。
+if (-not $LogFile)     { $LogFile     = Join-Path $PSScriptRoot ('logs\sync-queue-{0}.log' -f (Get-Date -Format 'yyyyMMdd')) }
 if (-not $SummaryFile) { $SummaryFile = Join-Path $PSScriptRoot 'logs\daily-sync-queue.csv' }
 if (-not $ConfigPath)  { $ConfigPath  = Join-Path $PSScriptRoot 'config.json' }
 

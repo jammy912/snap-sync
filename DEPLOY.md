@@ -287,7 +287,7 @@ PowerShell 端**不需要**帶 `k`，內部端點靠 `ADMIN_TOKEN` 把關。
 | 現象 | 先看 |
 |---|---|
 | 手機登不進去 | Sheet 的 LOG 分頁 `LOGIN_FAIL`；確認 USERS 的 `active` 是 `TRUE` |
-| 照片沒落地 | `powershell/logs/sync-queue.log`；QUEUE 列還在代表沒 ack（正常保護） |
+| 照片沒落地 | `powershell/logs/sync-queue-yyyymmdd.log`（一天一個檔）；QUEUE 列還在代表沒 ack（正常保護） |
 | Drive 一直長大 | `ack` 的 `driveDeleted` 是否為 `false` → 執行 `diagnoseDrive()` |
 | 排程有沒有在跑 | `powershell/logs/daily-sync-queue.csv` 的 `Runs` 欄（含空跑也會累加） |
 | log 一直說「上一輪尚未結束」 | 防呆正常運作；但持續發生代表單輪超過排程間隔，拉長間隔或調小 `-MaxItems` |

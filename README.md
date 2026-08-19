@@ -183,8 +183,8 @@ PowerShell 端**不需要**帶 `k`，內部端點靠 `ADMIN_TOKEN` 把關。
 
 | 檔案 | 內容 |
 |---|---|
-| `powershell/logs/push-tree.log` | 逐行執行記錄 |
-| `powershell/logs/sync-queue.log` | 逐行執行記錄（含每張照片落地路徑） |
+| `powershell/logs/push-tree-yyyymmdd.log` | 逐行執行記錄，**一天一個檔** |
+| `powershell/logs/sync-queue-yyyymmdd.log` | 逐行執行記錄，**一天一個檔**（含每張照片落地路徑） |
 | `powershell/logs/daily-push-tree.csv` | **每日彙總**：一天一列 |
 | `powershell/logs/daily-sync-queue.csv` | **每日彙總**：當日落地張數、失敗數、位元組數 |
 | Sheet 的 `LOG` 分頁 | 登入失敗、越權上傳嘗試、ack 異常 |
