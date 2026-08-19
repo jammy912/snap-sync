@@ -157,16 +157,23 @@ nav.tabs .tab-sub:empty { display: none; }
 /* 完整顯示目標路徑，過長就換行（最多 2 行）。
    這是「照片會傳到哪」的唯一常駐提示，截斷成 .../115年/11… 等於沒說，
    選錯目錄整批照片就進錯資料夾。 */
+/* 單行，但省略號放在【前面】，保留路徑尾端。
+   路徑前段（區域／案場）每張都一樣，末層才是分辨
+   「這批照片要進哪個資料夾」的關鍵，砍掉尾端等於沒說。
+   ⚠️ text-overflow:ellipsis 一定從尾端截，做不到前截。
+      解法是把容器設成 rtl 讓截斷點移到開頭，
+      再用 <bdi dir="ltr"> 把路徑本身鎖回 ltr，
+      否則開頭的 "/" 之類字元會被 BiDi 演算法搬到錯的位置。 */
 .target-bar .value {
-  flex: 1; font-size: 15px; font-weight: 600; line-height: 1.35;
-  text-align: left;
-  word-break: break-all; overflow-wrap: anywhere;
-  /* 3 行：深層路徑在 320px 的窄機（iPhone SE）上要 3 行才放得完，
-     兩行仍會被截掉末層目錄——那正是最需要看到的部分。 */
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
-  overflow: hidden;
+  flex: 1; min-width: 0; font-size: 15px; font-weight: 600;
+  direction: rtl; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.target-bar .value.unset { color: var(--warn); font-weight: 400; }
+.target-bar .value bdi { direction: ltr; unicode-bidi: isolate; }
+/* 未選目錄時是一句普通提示，不是路徑，改回 ltr 正常排 */
+.target-bar .value.unset {
+  color: var(--warn); font-weight: 400; direction: ltr;
+}
 .target-bar .caret { color: var(--muted); font-size: 11px; flex-shrink: 0; }
 
 /* 未選目錄時蓋在相機上的引導，點了直接開選單 */
@@ -280,16 +287,15 @@ nav.tabs .tab-sub:empty { display: none; }
   padding: 6px 12px; background: var(--panel);
   border-top: 1px solid var(--border);
 }
-/* 顯示完整路徑，很長就自己換行（CJK 與長英數路徑都要能斷）。
-   限 3 行：深層路徑大多三行內放得完，又不會把照片區壓掉太多。
-   .album-bar 是 flex-shrink:0，這裡變高會吃掉照片的高度，
-   所以行數不宜再往上加。 */
+/* 單行、省略號放【前面】（同「上傳至」列的作法，見該處說明）。
+   相簿下方這一條只是提醒「這張要傳去哪」，末層目錄看得到就夠了；
+   換行會吃掉照片高度。要看完整路徑請點進全螢幕檢視。 */
 .album-path {
-  flex: 1; font-size: 11px; line-height: 1.35; color: var(--muted);
-  word-break: break-all; overflow-wrap: anywhere;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
-  overflow: hidden;
+  flex: 1; min-width: 0; font-size: 11px; color: var(--muted);
+  direction: rtl; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.album-path bdi { direction: ltr; unicode-bidi: isolate; }
 .album-pos { flex-shrink: 0; font-size: 11px; color: var(--muted); }
 /* 相簿空的時候才顯示（由 JS 切換 display）。
    用 absolute 浮在中央而不佔 flex 版位：這樣它與相簿格互不影響，
@@ -532,9 +538,10 @@ nav.tabs .tab-sub:empty { display: none; }
   display: flex; align-items: center; gap: 10px; flex-shrink: 0;
   padding: 10px 14px; background: rgba(0,0,0,.6);
 }
-/* 完整路徑要看得到：現場常有「115-9/2.蟑螂屋/23.丸龜製麵 (4F)/第二次」
-   這種深層路徑，截斷後最關鍵的末層目錄反而被吃掉。
-   允許換行、最多 3 行，寧可多佔兩行也不要讓人分不出這張要傳去哪。 */
+/* 完整路徑要看得到：現場常有六、七層的深層路徑（區域／案場／年度／
+   期別／項目／樓層／次數），截斷後最關鍵的末層目錄反而被吃掉。
+   這裡是唯一該顯示完整路徑的地方，允許換行、最多 3 行——
+   上方「上傳至」列與相簿下方那條都只給單行摘要。 */
 .viewer-path {
   flex: 1; font-size: 13px; line-height: 1.4; color: var(--muted);
   word-break: break-all; overflow-wrap: anywhere;

@@ -98,10 +98,21 @@ App.tree = (function () {
     selected = path;
     var label = $('targetLabel');
     if (path) {
-      label.textContent = path;
+      // ⚠️ 包一層 <bdi dir="ltr">。CSS 把這一格設成 rtl 才能讓省略號
+      //    出現在【前面】（保留末層目錄），但那會讓路徑裡的 "/" 被
+      //    BiDi 演算法重排。bdi 把內容隔離回 ltr，顯示順序才正確。
+      //    用 textContent 塞進 bdi，不用 innerHTML 拼字串——
+      //    目錄名稱來自伺服器，直接拼會有 XSS 風險。
+      label.textContent = '';
+      var bdi = document.createElement('bdi');
+      bdi.setAttribute('dir', 'ltr');
+      bdi.textContent = path;
+      label.appendChild(bdi);
+      label.title = path;
       label.classList.remove('unset');
     } else {
       label.textContent = '尚未選擇目錄';
+      label.removeAttribute('title');
       label.classList.add('unset');
     }
     // 未選目錄時在相機上蓋一層引導（比只停用快門明確）

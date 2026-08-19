@@ -315,13 +315,16 @@ App.camera = (function () {
       img.style.display = 'none';
     }
 
-    // 路徑顯示【完整的】，不要自己截斷。
-    // 先前只取末三層並在開頭補 …，但現場的路徑深度不一，
-    // 被砍掉的那幾層有時正是分辨案場的關鍵（同一個「115-9」可能出現在
-    // 好幾個案場底下）。改為全部交給 CSS 換行呈現（限 2 行）。
+    // 路徑：內容給完整的，由 CSS 單行截斷【前段】保留末層目錄
+    // （bdi 的用途見 app.css 的 .album-path 與「上傳至」列的說明）。
+    // 不用 innerHTML 拼字串——目錄名稱來自伺服器，直接拼會有 XSS 風險。
     var full = r.targetPath || '—';
     var cap = $('albumPath');
-    cap.textContent = full;
+    cap.textContent = '';
+    var bdi = document.createElement('bdi');
+    bdi.setAttribute('dir', 'ltr');
+    bdi.textContent = full;
+    cap.appendChild(bdi);
     cap.title = full;
 
     $('albumPos').textContent = (albumIdx + 1) + '/' + album.length
