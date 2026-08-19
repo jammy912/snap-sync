@@ -404,6 +404,30 @@ App.queue = (function () {
     objectURLs = [];
   }
 
+  /**
+   * 縮圖的預覽網址讀不到時的替代畫面。
+   *
+   * ⚠️ 刻意【不用警示色、不寫「失敗」】。
+   *    這裡壞掉的只是 objectURL，IndexedDB 裡的 blob 完好無損——
+   *    上傳走的是 App.db.get() 重讀，跟這個網址是兩條路，
+   *    所以這些照片【照樣會正常傳完】（使用者實測確認過）。
+   *    先前顯示紅字「預覽讀取失敗」會讓人以為照片壞了、想刪掉重拍，
+   *    那才是真正的損失。
+   *
+   *    真的沒有 blob（照片資料遺失）才用警示色，見 render() 的 else 分支。
+   */
+  function showPreviewUnavailable(div, img) {
+    if (img) img.remove();
+    var w = document.createElement('div');
+    w.className = 'thumb-nopreview';
+    w.innerHTML =
+      '<svg viewBox="0 0 24 24" aria-hidden="true">' +
+      '<path d="M3 8.5A1.5 1.5 0 0 1 4.5 7h2.7l1.4-2h6.8l1.4 2h2.7A1.5 1.5 0 0 1 21 8.5v9A1.5 1.5 0 0 1 19.5 19h-15A1.5 1.5 0 0 1 3 17.5z"/>' +
+      '<circle cx="12" cy="12.8" r="3.4"/></svg>' +
+      '<span>預覽暫時無法顯示<br>不影響上傳</span>';
+    div.insertBefore(w, div.firstChild);
+  }
+
   // 渲染世代編號。傳送時 tick() 每送完一張就呼叫 render()，
   // 密集觸發會讓多次 render 重疊執行（見下方說明）。
   var renderSeq = 0;
@@ -438,9 +462,7 @@ App.queue = (function () {
 
       $('queueEmpty').style.display = recs.length ? 'none' : 'block';
 
-      var totalSize = 0;
       recs.forEach(function (r) {
-        totalSize += r.size || 0;
         // r.blob 可能不是有效的 Blob（舊版寫壞的記錄）。
         // createObjectURL 會直接丟例外，不擋的話整個 forEach 中斷，
         // 後面所有照片都不會被畫出來——一張壞的害整頁空白。
@@ -481,26 +503,16 @@ App.queue = (function () {
               if (!fresh || !(fresh.blob instanceof Blob)) { throw new Error('no blob'); }
               var url2 = URL.createObjectURL(fresh.blob);
               objectURLs.push(url2);
-              // 第二次仍失敗才顯示錯誤，避免無限重試
-              img.onerror = function () {
-                div.classList.add('broken');
-                img.remove();
-                var w = document.createElement('div');
-                w.className = 'thumb-broken';
-                w.textContent = '預覽讀取失敗';
-                div.insertBefore(w, div.firstChild);
-              };
+              // 第二次仍失敗才顯示替代畫面，避免無限重試
+              img.onerror = function () { showPreviewUnavailable(div, img); };
               img.src = url2;
             }).catch(function () {
-              div.classList.add('broken');
-              img.remove();
-              var w = document.createElement('div');
-              w.className = 'thumb-broken';
-              w.textContent = '預覽讀取失敗';
-              div.insertBefore(w, div.firstChild);
+              showPreviewUnavailable(div, img);
             });
           };
         } else {
+          // 這才是真的有問題（IndexedDB 裡沒有 blob），用警示色。
+          // 與上面的「預覽暫時無法顯示」不同：那個檔案是好的，只是網址失效。
           div.classList.add('broken');
           var w0 = document.createElement('div');
           w0.className = 'thumb-broken';
@@ -561,9 +573,10 @@ App.queue = (function () {
         if (changed) updateSelectUI();
       }
 
-      $('queueInfo').textContent = recs.length
-        ? (recs.length + ' 張待上傳 · ' + App.util.fmtSize(totalSize))
-        : '佇列已清空';
+      // ⚠️ queueInfo 不在這裡寫，改由 refreshBadge 統一更新。
+      //    傳送中 tick(light) 會跳過 render（避開 objectURL 競態），
+      //    寫在這裡就不會更新，畫面會出現「工具列說 3 張、分頁說 2 張」
+      //    的矛盾，讓人以為有一張卡住沒送。
     });
   }
 
@@ -730,6 +743,16 @@ App.queue = (function () {
         sub.textContent = recs.length
           ? (recs.length + ' 張 · ' + App.util.fmtSize(totalSize))
           : '';
+      }
+
+      // 佇列頁工具列的張數也在這裡寫，與上面的徽章【同一次讀取】。
+      // 分開在 render 寫的話，傳送中 tick(light) 跳過 render，
+      // 兩個數字就會對不起來（實際回報過：工具列 3 張、分頁 2 張）。
+      var info = $('queueInfo');
+      if (info) {
+        info.textContent = recs.length
+          ? (recs.length + ' 張待上傳 · ' + App.util.fmtSize(totalSize))
+          : '佇列已清空';
       }
 
       var bar = $('sendBar');
