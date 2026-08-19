@@ -43,8 +43,12 @@ App.app = (function () {
     toast('設定已儲存');
   }
 
+  // 分頁鍵不只在 nav.tabs 裡——「設定」已移到標題列的 ⋮。
+  // 兩處都用這個選擇器，避免其中一邊漏掉而按了沒反應。
+  var TAB_BTNS = 'nav.tabs button, header button[data-tab]';
+
   function switchTab(tab) {
-    var buttons = document.querySelectorAll('nav.tabs button');
+    var buttons = document.querySelectorAll(TAB_BTNS);
     for (var i = 0; i < buttons.length; i++) {
       buttons[i].classList.toggle('active', buttons[i].dataset.tab === tab);
     }
@@ -218,7 +222,7 @@ App.app = (function () {
     $('saveSettingsBtn').onclick = saveSettings;
     $('logoutBtn').onclick = logout;
 
-    var buttons = document.querySelectorAll('nav.tabs button');
+    var buttons = document.querySelectorAll(TAB_BTNS);
     for (var i = 0; i < buttons.length; i++) {
       (function (b) { b.onclick = function () { switchTab(b.dataset.tab); }; })(buttons[i]);
     }

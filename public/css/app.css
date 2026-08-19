@@ -49,15 +49,30 @@ html, body {
 body { display: flex; flex-direction: column; }
 
 /* ---------- Header ---------- */
+/* ⚠️ 不可用 justify-content:space-between。
+   加入右上角的 ⋮ 之後變成三個子項，space-between 會把「線上」狀態
+   推到正中間。改用 h1 flex:1 吃掉剩餘空間，狀態與 ⋮ 自然靠右。 */
 header {
   padding: 12px 16px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; justify-content: space-between;
+  display: flex; align-items: center; gap: 10px;
   flex-shrink: 0;
 }
+/* 標題列右上角的圖示鍵（目前是「設定」的 ⋮）。
+   觸控範圍做到 36px：現場可能戴手套，純文字 ⋮ 太細按不準。 */
+.hdr-btn {
+  flex-shrink: 0; width: 36px; height: 36px;
+  border: none; background: none; color: var(--muted);
+  font-size: 20px; line-height: 1; cursor: pointer;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+}
+.hdr-btn:active { background: var(--panel2); }
+/* 目前停在設定頁時點亮，跟分頁列的 active 一致 */
+.hdr-btn.active { color: var(--accent-bright); background: var(--panel2); }
 /* 狀態列放大後，標題在窄螢幕上要讓位，不能把狀態擠掉 */
-header h1 { font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+header h1 { flex: 1; font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 /* 版本號：現場回報問題時要能一眼確認手機上跑的是哪一版前端。
    PWA 會快取前端資源，「已部署」不等於「使用者拿到了」。
    刻意壓小、用次要色，不跟標題搶注意力。 */

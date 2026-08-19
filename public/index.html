@@ -46,6 +46,10 @@
 <header>
   <h1>現場拍照上傳<span class="ver" id="appVer"></span></h1>
   <span class="status-dot"><span class="dot" id="netDot"></span><span id="netText">檢查中</span></span>
+  <!-- 設定很少用，移到右上角，把分頁列讓給每天在用的兩個。
+       仍帶 data-tab，沿用 switchTab 那套切換邏輯。 -->
+  <button class="hdr-btn" id="settingsBtn" data-tab="settings"
+          title="設定" aria-label="設定">⋮</button>
 </header>
 
 <nav class="tabs">
@@ -57,7 +61,6 @@
     <span>佇列 <span id="countBadge"></span></span>
     <span class="tab-sub" id="queueSub"></span>
   </button>
-  <button data-tab="settings">設定</button>
 </nav>
 
 <main>
