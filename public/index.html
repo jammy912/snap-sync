@@ -92,6 +92,8 @@
           <span class="live-tag">相機</span>
           <span class="spacer" id="liveCount"></span>
         </div>
+        <!-- 按快門時白閃一下的拍照感。預設透明，不擋操作。 -->
+        <div id="camFlash"></div>
       </div>
       <div id="camHint">
         按右下角的相機鍵開啟相機<br>
@@ -117,14 +119,8 @@
       </div>
       <button class="shutter" id="shutterBtn" disabled></button>
       <div class="ctl-side right">
-        <!-- 切換鏡頭與閃光燈：只在相機開著時顯示（由 refreshLiveUI 控制）。
-             閃光燈還要該鏡頭真的有燈才出現（前鏡頭通常沒有）。 -->
-        <button class="icon-btn" id="liveSwitchBtn" title="切換鏡頭" aria-label="切換鏡頭" style="display:none">
-          <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M20 11a8 8 0 0 0-13.9-5.4M4 13a8 8 0 0 0 13.9 5.4"/>
-            <path d="M20 5v6h-6M4 19v-6h6"/>
-          </svg>
-        </button>
+        <!-- 閃光燈：只在相機開著、且該鏡頭真的有燈時顯示
+             （由 refreshLiveUI 控制）。固定用後鏡頭，不提供自拍切換。 -->
         <button class="icon-btn" id="torchBtn" title="閃光燈" aria-label="閃光燈" aria-pressed="false" style="display:none">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M13 2 4.5 13.5H11l-1 8.5 8.5-11.5H12z"/>

@@ -105,11 +105,11 @@ App.camera = (function () {
   // 閃光燈：track.applyConstraints({ advanced: [{ torch: true }] })。
   // 支不支援【一律問 getCapabilities()】，不要用平台判斷——
   // iOS 實測是會亮的（見檔頭的「修正錯誤認知」）。
-  // 有些鏡頭（前鏡頭）本來就沒燈，所以切換鏡頭後要重新問一次。
   var stream = null;
   var track = null;
   var torchOn = false;
-  var facingMode = 'environment';
+  // 固定後鏡頭：現場拍的是設備與環境，自拍鏡頭用不到（也沒有閃光燈）。
+  var FACING = 'environment';
 
   function liveOn() { return !!stream; }
 
@@ -122,7 +122,7 @@ App.camera = (function () {
   function startLive() {
     stopLive();
     return navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: facingMode }, width: { ideal: 1920 }, height: { ideal: 1080 } },
+      video: { facingMode: { ideal: FACING }, width: { ideal: 1920 }, height: { ideal: 1080 } },
       audio: false
     }).then(function (s) {
       stream = s;
@@ -209,10 +209,6 @@ App.camera = (function () {
       lb.setAttribute('aria-label', on ? '關閉相機' : '開啟相機');
       lb.innerHTML = on ? ICON_CAM_OFF : ICON_CAM_ON;
     }
-
-    // 切換鏡頭只在相機開著時有意義
-    var sw = $('liveSwitchBtn');
-    if (sw) { sw.style.display = on ? 'flex' : 'none'; }
   }
 
   function toggleTorch() {
@@ -226,9 +222,23 @@ App.camera = (function () {
     });
   }
 
-  function switchCam() {
-    facingMode = (facingMode === 'environment') ? 'user' : 'environment';
-    return startLive();
+  /**
+   * 按下快門時畫面白閃一下（相機的拍照感）。
+   *
+   * 不只是好看：存檔是非同步的，沒有回饋的話使用者不確定到底拍到沒有，
+   * 就會多按幾次變成重複照片。閃一下是【當下立刻】看得到的確認，
+   * 比等 toast 跳出來快。
+   *
+   * ⚠️ 用 CSS animation 而非 setTimeout 改樣式：
+   *    連拍時前一次的計時器會蓋掉後一次。這裡每次都把節點抽掉重加，
+   *    強制動畫從頭播放，連續按也每張都閃。
+   */
+  function flashScreen() {
+    var el = $('camFlash');
+    if (!el) return;
+    el.classList.remove('on');
+    void el.offsetWidth;      // 強制 reflow，動畫才會重新開始
+    el.classList.add('on');
   }
 
   /** 即時拍照的快門：從 video 抓一格畫面 */
@@ -251,6 +261,8 @@ App.camera = (function () {
     var c = $('canvas');
     c.width = w; c.height = h;
     c.getContext('2d').drawImage(v, 0, 0, w, h);
+
+    flashScreen();      // 畫面閃一下，讓人知道「這一張拍下去了」
 
     busy = true;
     refreshShutterState();
@@ -412,7 +424,6 @@ App.camera = (function () {
       if (liveOn()) { exitLive(); } else { startLive(); }
     };
     $('torchBtn').onclick = toggleTorch;
-    $('liveSwitchBtn').onclick = switchCam;
 
     // 切走分頁或 App 進背景就關相機：省電、放開鏡頭給別的 App，
     // 也避免使用者以為還在錄影。回來時停在相簿，要拍再按一次。

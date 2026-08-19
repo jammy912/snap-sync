@@ -202,6 +202,20 @@ nav.tabs .tab-sub:empty { display: none; }
   font-size: 11px; color: #fff; background: rgba(0,0,0,.45);
   padding: 3px 9px; border-radius: 999px; flex-shrink: 0;
 }
+/* 按快門時白閃一下的拍照感。
+   pointer-events:none：純視覺效果，絕不可擋住快門或預覽的觸控。 */
+#camFlash {
+  position: absolute; inset: 0; z-index: 4;
+  background: #fff; opacity: 0; pointer-events: none;
+}
+#camFlash.on { animation: camFlash .22s ease-out; }
+/* 先瞬間全白再淡出，模擬快門開合；0.22s 夠短，連拍不會卡手 */
+@keyframes camFlash {
+  0%   { opacity: 0; }
+  12%  { opacity: .85; }
+  100% { opacity: 0; }
+}
+
 /* 閃光燈／相機開關在下方控制列，開啟時整顆點亮——
    現場一眼看得出燈是不是還開著（很耗電），以及現在是相機還是相簿。 */
 .icon-btn.is-on {
