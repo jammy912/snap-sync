@@ -410,15 +410,24 @@ App.queue = (function () {
     }).finally(function () {
       // 先解鎖再更新畫面，否則「傳送」鍵會停在 disabled
       // （refreshBadge 是依 flushing 決定按鈕狀態的）
+      var wasCancelled = cancelRequested;
       flushing = false;
       cancelRequested = false;
+
+      // ⚠️ 使用者按過取消：把剩下的照片退回【未確認】＝「還沒按過傳送」。
+      //    只停計時器不夠——confirmed 還掛著的話畫面會說
+      //    「N 張已確認，等待自動重送」、按鈕變成「立即重試」，
+      //    看起來仍在待送佇列裡，跟「我按了取消」的認知不符
+      //    （使用者實際回報的截圖）。
+      //    放在這裡而不是 cancelFlush：按下取消的當下迴圈還在送最後一張，
+      //    那時清會被那張的收尾蓋回去。
+      //    照片本身完全不動，只是不再自動送，要送請使用者再按一次「傳送」。
+      if (wasCancelled) {
+        return unconfirmAll().then(tick);
+      }
+
       // 還有沒送掉的就排下一輪；全部送完 scheduleRetry 會自行關掉旗標。
-      //
-      // ⚠️ 但使用者按過取消就【不排】。原本無條件 scheduleRetry()，
-      //    取消後約 5 秒又自動開始，flushing 再度變 true，於是傳送鍵
-      //    顯示「傳送」（看起來停了）卻擋住「選取」說傳送中——自相矛盾。
-      //    要再送請使用者自己按「傳送」，那才是明確的意圖。
-      if (!autoRetryPaused) { scheduleRetry(); }
+      scheduleRetry();
       return tick();
     });
   }
@@ -851,6 +860,8 @@ App.queue = (function () {
     autoRetryPaused = true;
     if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
     toast('已停止傳送，未送出的會保留在本機');
+    // 退回未確認的動作放在 flush 的 finally（見該處說明）——
+    // 此刻迴圈還在送最後一張，現在清會被那張的收尾蓋回去。
     refreshBadge();
   }
 
